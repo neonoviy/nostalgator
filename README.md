@@ -6,7 +6,7 @@ A program for viewing a photo archive with automatic place and face recognition.
 
 # WARNING
 
-This project is heavily vibecoded. Proceed accordingly.
+This project is heavily vibecoded. Even this Readme. Proceed accordingly.
 
 ## Features
 
