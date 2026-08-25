@@ -1,0 +1,107 @@
+@use '../../variables' as *;
+@use '../../mixins' as *;
+
+.sidebar {
+  width: 300px;
+  background-color: var(--bg);
+  border-left: 1px solid var(--border-color);
+  transition: all $transition-slow;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+
+  &-wrapper {
+    overflow-y: auto;
+    padding-top: var(--spacing-md);
+  }
+  &__header {
+    display: flex;
+    align-items: center;
+    padding: 0 var(--spacing-md) var(--spacing-md);
+    gap: var(--spacing-sm);
+  }
+
+  &__settings {
+    flex-shrink: 0;
+  }
+
+  &__settings-btn {
+    @include icon-button;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius);
+    font-size: 18px;
+    color: var(--text-secondary);
+    transition: background-color $transition-base;
+
+    &:hover {
+      background-color: var(--bg-high);
+    }
+  }
+
+  &__avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: var(--primary);
+    color: var(--color-inverted);
+    font-size: 16px;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1;
+    user-select: none;
+  }
+
+  &__login-btn {
+    @include icon-button;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    font-size: 18px;
+    color: var(--text-secondary);
+    transition: background-color $transition-base;
+
+    &:hover {
+      background-color: var(--bg-high);
+    }
+  }
+
+  &__toggle-btn {
+    position: absolute;
+    margin-left: -54px;
+    padding: 14px 20px !important;
+    background: transparent !important;
+    z-index: 2;
+    box-shadow: none !important;
+    display: none !important;
+    @include transition-base;
+  }
+}
+
+@media screen and (max-width: 720px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    right: -300px;
+    z-index: 2;
+    height: 100vh;
+    box-shadow: $shadow-lg;
+  }
+
+  .sidebar.opened {
+    right: 0px;
+    max-width: 100%;
+    padding-left: 42px;
+  }
+
+  .sidebar__toggle-btn {
+    display: block !important;
+  }
+
+  .sidebar.opened .sidebar__toggle-btn {
+    margin-top: 12px;
+    margin-left: -42px;
+  }
+}

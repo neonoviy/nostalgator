@@ -1,0 +1,232 @@
+:root {
+  --primary: #000;
+  --secondary: #e5e5de;
+  --success: #28a745;
+  --danger: #dc3545;
+  --warning: #ffc107;
+  --info: #17a2b8;
+
+  --base: #fff;
+  --base-rgb: 255, 255, 255;
+  --bg-low: #f9faf8;
+  --bg: #f5f5f2;
+  --bg-high: #e3e3df;
+  --bg-hover: color-mix(in srgb, var(--bg), var(--bg-high) 50%);
+
+  --muted-mix-color: #000;
+  --muted-mix-percent: 50%;
+  --accent-mix-color: #fff;
+  --accent-mix-percent: 15%;
+
+  --tag-mix-percent: 90%;
+  --tag-active-mix-percent: 95%;
+
+  --color: #333;
+  --color-muted: rgba(153, 153, 153, 0.8);
+  --color-inverted: #fff;
+
+  --border-color: #ddd;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-xxl: 48px;
+
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size: 16px;
+  --font-size-base: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 24px;
+  --font-size-xxl: 28px;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --radius: 8px;
+  --radius-xl: 16px;
+  --radius-full: 50%;
+
+  --inset-shadow-color: rgba(44, 31, 3, 0.22);
+
+  --map-polygon-default-fill: #000000;
+  --map-polygon-default-outline: #000000;
+  --map-polygon-selected-fill: #000000;
+  --map-polygon-selected-outline: #000000;
+  --map-hover-fill: #000000;
+  --map-hover-outline: #000000;
+  --map-cluster-default: #1b6fb3;
+  --map-cluster-selected: #42a5f5;
+  --map-cluster-marker-border: #42a5f5;
+  --map-cluster-marker-text: #ffffff;
+  --map-heat-0: rgba(2, 22, 43, 0);
+  --map-heat-02: rgb(103, 169, 207);
+  --map-heat-04: rgb(209, 229, 240);
+  --map-heat-06: rgb(253, 219, 199);
+  --map-heat-08: rgb(239, 138, 98);
+  --map-heat-1: rgb(178, 24, 43);
+}
+
+[data-theme='dark'] {
+  --primary: #fff;
+  --secondary: #303030;
+  --success: #218838;
+  --danger: #c82333;
+  --warning: #e0a800;
+  --info: #138496;
+
+  --base: #000;
+  --base-rgb: 0, 0, 0;
+  --bg-low: #111111;
+  --bg: #191919;
+  --bg-high: #252525;
+  --bg-hover: color-mix(in srgb, var(--bg), var(--bg-high) 50%);
+
+  --muted-mix-color: #333;
+  --muted-mix-percent: 50%;
+  --accent-mix-color: #fff;
+  --accent-mix-percent: 5%;
+
+  --tag-mix-percent: 60%;
+  --tag-active-mix-percent: 55%;
+
+  --color: #ddd;
+  --color-muted: rgba(102, 102, 102, 0.75);
+  --color-inverted: #333;
+
+  --border-color: #303030;
+
+  --inset-shadow-color: rgb(0 0 0 / 100%);
+
+  --map-polygon-default-fill: #ffffff;
+  --map-polygon-default-outline: #ffffff;
+  --map-polygon-selected-fill: #ffffff;
+  --map-polygon-selected-outline: #ffffff;
+  --map-hover-fill: #ffffff;
+  --map-hover-outline: #ffffff;
+  --map-cluster-default: #1b6fb3;
+  --map-cluster-selected: #42a5f5;
+  --map-cluster-marker-border: #42a5f5;
+  --map-cluster-marker-text: #ffffff;
+  --map-heat-0: rgba(33, 102, 172, 0);
+  --map-heat-02: rgb(120, 190, 230);
+  --map-heat-04: rgb(220, 235, 245);
+  --map-heat-06: rgb(255, 200, 170);
+  --map-heat-08: rgb(245, 150, 110);
+  --map-heat-1: rgb(200, 40, 60);
+}
+
+$primary: var(--primary);
+$secondary: var(--secondary);
+$success: var(--success);
+$danger: var(--danger);
+$warning: var(--warning);
+$info: var(--info);
+
+$colors: (
+  'primary': var(--primary),
+  'secondary': var(--secondary),
+  'success': var(--success),
+  'danger': var(--danger),
+  'warning': var(--warning),
+  'info': var(--info),
+);
+
+@each $name, $value in $colors {
+  .text-#{$name} {
+    color: #{$value};
+  }
+}
+
+:root {
+  @each $name, $value in $colors {
+    --#{$name}-muted: color-mix(
+      in srgb,
+      #{$value},
+      var(--muted-mix-color) var(--muted-mix-percent)
+    );
+    --#{$name}-accent: color-mix(
+      in srgb,
+      #{$value},
+      var(--accent-mix-color) var(--accent-mix-percent)
+    );
+    --#{$name}-light: color-mix(in srgb, #{$value}, #fff 30%);
+    --#{$name}-dark: color-mix(in srgb, #{$value}, #000 30%);
+  }
+}
+
+[data-theme='dark'] {
+  @each $name, $value in $colors {
+    --#{$name}-muted: color-mix(
+      in srgb,
+      #{$value},
+      var(--muted-mix-color) var(--muted-mix-percent)
+    );
+    --#{$name}-accent: color-mix(
+      in srgb,
+      #{$value},
+      var(--accent-mix-color) var(--accent-mix-percent)
+    );
+    --#{$name}-light: color-mix(in srgb, #{$value}, #fff 80%);
+    --#{$name}-dark: color-mix(in srgb, #{$value}, #000 80%);
+  }
+}
+
+$button-types: (
+  'primary': var(--primary),
+  'success': var(--success),
+  'danger': var(--danger),
+);
+
+// ============================================
+// Breakpoints
+// ============================================
+
+$breakpoint-sm: 576px;
+$breakpoint-md: 768px;
+$breakpoint-lg: 992px;
+$breakpoint-xl: 1200px;
+$breakpoint-xxl: 1600px;
+
+// ============================================
+// Z-index
+// ============================================
+
+$z-index-modal-overlay: 110;
+$z-index-dropdown: 100;
+$z-index-year-header: 10;
+
+// ============================================
+// Transition
+// ============================================
+
+$transition-fast: 0.15s ease;
+$transition-base: 0.2s ease;
+$transition-slow: 0.3s ease;
+
+// ============================================
+// Shadows
+// ============================================
+
+$shadow-sm: 0 1px 5px 1px rgba(0, 0, 0, 0.5);
+$shadow-md: 0 2px 8px rgba(0, 0, 0, 0.3);
+$shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.15);
+$shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.2);
+
+$shdow-inset-sm: inset 0 1px 2px 1px rgba(0, 0, 0, 0.2);
+$shdow-inset-md: inset 0 1px 3px 1px var(--inset-shadow-color);
+
+:root {
+  --vs-border-radius: var(--radius) !important;
+  --vs-border-color: var(--border-color) !important;
+  --vs-search-input-placeholder-color: var(--color-muted) !important;
+  --vs-actions-padding: 4px 0px 0 3px !important;
+  --vs-selected-bg: var(--primary) !important;
+  --vs-controls-color: var(--color-muted) !important;
+
+  --vs-dropdown-option--active-bg: var(--primary) !important;
+}

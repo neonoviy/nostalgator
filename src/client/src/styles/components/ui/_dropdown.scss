@@ -1,0 +1,121 @@
+@use '../../variables' as *;
+@use '../../mixins' as *;
+
+// ============================================
+// Dropdown
+// ============================================
+
+.dropdown {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+/* ============================================
+   Button
+   ============================================ */
+.dropdown__button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  // padding: var(--spacing-sm) var(--spacing-md);
+  @include transition-base;
+}
+
+.dropdown__button-text {
+  flex: 1;
+  text-align: left;
+}
+
+.dropdown__caret {
+  font-size: 12px;
+  opacity: 0.7;
+  @include transition-base;
+
+  &--rotated {
+    transform: rotate(180deg);
+  }
+}
+
+/* ============================================
+   Content
+   ============================================ */
+.dropdown__content {
+  @include dropdown-panel;
+  z-index: 10;
+  margin-top: var(--spacing-xs);
+  min-width: 170px;
+}
+
+/* Teleported dropdown (positioned via JS) */
+.dropdown__content--teleported {
+  position: fixed;
+  /* top, left, width are set via inline style */
+}
+
+/* Positioning (for non-teleported) */
+.dropdown--bottom .dropdown__content {
+  top: 100%;
+}
+
+.dropdown--top .dropdown__content {
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: var(--spacing-xs);
+}
+
+/* ============================================
+   Animation
+   ============================================ */
+.dropdown-enter-active,
+.dropdown-leave-active {
+  transition: all 0.2s ease;
+}
+
+.dropdown-enter-from,
+.dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.dropdown--top .dropdown-enter-from,
+.dropdown--top .dropdown-leave-to {
+  transform: translateY(10px);
+}
+
+/* ============================================
+   Content in Sidebar
+   ============================================ */
+.dropdown-menu-content {
+  padding: 0;
+}
+
+.dropdown-menu-user {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-weight: var(--font-weight-semibold);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Menu item button in Sidebar dropdown */
+.dropdown-menu-item,
+.dropdown-menu-link {
+  display: block;
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  text-decoration: none;
+  @include transition-base;
+
+  &:hover {
+    background-color: color-mix(
+      in srgb,
+      var(--muted-mix-color),
+      transparent var(--tag-active-mix-percent)
+    );
+    color: var(--primary);
+  }
+}
+
+.dp__input_icons {
+  padding-right: var(--spacing-md);
+}

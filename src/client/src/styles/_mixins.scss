@@ -1,0 +1,146 @@
+@use 'variables' as *;
+
+@mixin flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@mixin flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+@mixin flex-start {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+@mixin flex-end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+// ============================================
+// Transition
+// ============================================
+
+@mixin transition-fast {
+  transition: all $transition-fast;
+}
+
+@mixin transition-base {
+  transition: all $transition-base;
+}
+
+@mixin transition-slow {
+  transition: all $transition-slow;
+}
+
+// ============================================
+// Form controls
+// ============================================
+
+@mixin input-control {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-low);
+  box-sizing: border-box;
+  color: var(--color);
+  box-shadow: $shdow-inset-md;
+  @include transition-base;
+}
+
+@mixin dropdown-panel {
+  background: var(--bg-low);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  box-shadow: $shadow-md;
+  overflow: hidden;
+}
+
+// ============================================
+// Typography
+// ============================================
+
+@mixin text-truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// Caret / triangle arrow
+@mixin caret-down($color: var(--color-muted)) {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid $color;
+}
+
+@mixin caret-right($color: var(--color-muted)) {
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 6px solid $color;
+  border-right: none;
+}
+
+// ============================================
+// Overlays
+// ============================================
+
+@mixin overlay-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+// ============================================
+// Panels
+// ============================================
+
+@mixin panel {
+  background: var(--bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  box-shadow: $shadow-xl;
+  display: flex;
+  flex-direction: column;
+}
+
+// ============================================
+// Icon buttons
+// ============================================
+
+@mixin icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  @include flex-center;
+  @include transition-base;
+}
+
+// ============================================
+// Expand / collapse
+// ============================================
+
+@mixin expand-collapse {
+  transition:
+    margin 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.35s ease,
+    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}

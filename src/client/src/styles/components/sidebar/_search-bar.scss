@@ -1,0 +1,36 @@
+@use '../../variables' as *;
+@use '../../mixins' as *;
+
+.search-bar {
+  & .search-bar__input {
+    border-radius: 50px !important;
+  }
+
+  &__wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  &__icon {
+    position: absolute;
+    pointer-events: none;
+  }
+
+  &__input {
+    width: 100%;
+    @include transition-base;
+  }
+
+  &__clear {
+    position: absolute;
+    right: var(--spacing-xs);
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius)-full;
+    background: var(--bg-gray);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    @include icon-button;
+  }
+}

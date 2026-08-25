@@ -1,0 +1,47 @@
+@use '../../variables' as *;
+@use '../../mixins' as *;
+
+.load-more-trigger {
+  padding: 0 var(--spacing-xl);
+  min-height: 80px;
+  text-align: center;
+  
+  .loading-indicator{
+    display: block;
+    width: 100%;
+    text-align: center;
+    @include transition-base;
+  }
+
+  .load-more-button{
+    display: block;
+    width: 100%;
+    @include transition-base;
+  }
+
+  .loading {
+    font-size: var(--font-size-lg);
+  }
+  
+  .trigger-hint {
+    font-style: italic;
+  
+  }
+  
+  .load-more-button {
+    padding: var(--spacing-sm) var(--spacing-lg);
+
+  }
+}
+
+.load-more-trigger > * {
+  // Smooth appearance: 200ms delay, then 200ms fade in
+  transition: opacity 0.2s ease 0.2s, visibility 0.2s ease 0.2s;
+  
+  &.is-hidden {
+    opacity: 0;
+    visibility: hidden;
+    // Instant hide
+    transition: opacity 0.05s ease, visibility 0.05s ease;
+  }
+}

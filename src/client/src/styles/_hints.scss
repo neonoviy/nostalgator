@@ -1,0 +1,33 @@
+@use 'variables' as *;
+@use 'mixins' as *;
+
+.hint-box {
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.hint-box--info {
+  background: rgba(33, 150, 243, 0.1);
+  border: 1px solid rgba(33, 150, 243, 0.35);
+  color: #0d47a1;
+}
+
+.hint-box--warning {
+  background: rgba(255, 193, 7, 0.12);
+  border: 1px solid rgba(255, 193, 7, 0.4);
+  color: #856404;
+}
+
+[data-theme='dark'] .hint-box--info {
+  background: rgba(33, 150, 243, 0.08);
+  border-color: rgba(33, 150, 243, 0.25);
+  color: #64b5f6;
+}
+
+[data-theme='dark'] .hint-box--warning {
+  background: rgba(255, 193, 7, 0.08);
+  border-color: rgba(255, 193, 7, 0.25);
+  color: #ffc107;
+}

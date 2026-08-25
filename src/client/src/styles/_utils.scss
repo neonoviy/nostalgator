@@ -1,0 +1,179 @@
+@use 'variables' as *;
+@use 'mixins' as *;
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background-color: var(--bg-low);
+  color: var(--color);
+}
+
+.container {
+  padding: 0 var(--spacing-md);
+}
+
+.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+// Utilities
+.d-none {
+  display: none !important;
+}
+
+.d-block {
+  display: block !important;
+}
+
+.d-flex {
+  display: flex !important;
+}
+
+.align-items-center {
+  align-items: center !important;
+}
+
+.w-100 {
+  width: 100% !important;
+}
+
+.w-75 {
+  width: 75% !important;
+}
+
+.w-50 {
+  width: 50% !important;
+}
+
+.w-25 {
+  width: 25% !important;
+}
+
+.mb-md {
+  margin-bottom: var(--spacing-md);
+}
+
+.opacity-50 {
+  opacity: 0.5 !important;
+}
+
+.row {
+  @include flex-between;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+}
+
+@each $step in (xs, sm, md, lg, xl, xxl) {
+  .m-#{$step} {
+    margin: var(--spacing-#{$step}) !important;
+  }
+  .mt-#{$step} {
+    margin-top: var(--spacing-#{$step}) !important;
+  }
+  .mb-#{$step} {
+    margin-bottom: var(--spacing-#{$step}) !important;
+  }
+  .ml-#{$step} {
+    margin-left: var(--spacing-#{$step}) !important;
+  }
+  .mr-#{$step} {
+    margin-right: var(--spacing-#{$step}) !important;
+  }
+  .mx-#{$step} {
+    margin-left: var(--spacing-#{$step}) !important;
+    margin-right: var(--spacing-#{$step}) !important;
+  }
+  .my-#{$step} {
+    margin-top: var(--spacing-#{$step}) !important;
+    margin-bottom: var(--spacing-#{$step}) !important;
+  }
+
+  .p-#{$step} {
+    padding: var(--spacing-#{$step}) !important;
+  }
+  .pt-#{$step} {
+    padding-top: var(--spacing-#{$step}) !important;
+  }
+  .pb-#{$step} {
+    padding-bottom: var(--spacing-#{$step}) !important;
+  }
+  .pl-#{$step} {
+    padding-left: var(--spacing-#{$step}) !important;
+  }
+  .pr-#{$step} {
+    padding-right: var(--spacing-#{$step}) !important;
+  }
+  .px-#{$step} {
+    padding-left: var(--spacing-#{$step}) !important;
+    padding-right: var(--spacing-#{$step}) !important;
+  }
+  .py-#{$step} {
+    padding-top: var(--spacing-#{$step}) !important;
+    padding-bottom: var(--spacing-#{$step}) !important;
+  }
+}
+
+.unround-top {
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin; /* 'auto' or 'thin' */
+  scrollbar-color: #555 transparent; /* [thumb color] [track color] */
+  scrollbar-gutter: stable overlay;
+}
+
+::-webkit-scrollbar {
+  width: 10px; /* for vertical */
+  height: 10px; /* for horizontal */
+  background: transparent;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-high);
+  border-radius: 10px;
+  border: 2px solid var(--bg-low); /* creates an offset effect from the edges */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+// Shake animation (for validation errors)
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  10%,
+  30%,
+  50%,
+  70%,
+  90% {
+    transform: translateX(-10px);
+  }
+  20%,
+  40%,
+  60%,
+  80% {
+    transform: translateX(10px);
+  }
+}
+
+.shake {
+  animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@media screen and (max-width: 720px) {
+  .hide-sm {
+    display: none !important;
+  }
+}

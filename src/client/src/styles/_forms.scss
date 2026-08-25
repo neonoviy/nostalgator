@@ -1,0 +1,389 @@
+@use 'variables' as *;
+@use 'mixins' as *;
+
+// ============================================
+// Shared utility classes
+// ============================================
+
+.input-control {
+  @include input-control;
+}
+
+.dropdown-panel {
+  @include dropdown-panel;
+}
+
+// ============================================
+// Forms — general styles
+// ============================================
+
+// Form container
+
+// Field group (label + input)
+.form-group {
+  margin-bottom: var(--spacing-md);
+  width: 100%;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.form-group-row {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: var(--spacing-sm);
+}
+
+.form-group-row > label {
+  width: 40%;
+  padding-right: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  text-align: end;
+}
+
+@media screen and (max-width: 720px) {
+  .form-group-row {
+    flex-direction: column;
+  }
+
+  .form-group-row > label {
+    width: 100%;
+    text-align: start;
+  }
+}
+
+.form-actions {
+  @include flex-end;
+}
+
+// Label
+label {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+}
+
+// ============================================
+// Forms — general styles
+// ============================================
+
+// Form container
+
+// Field group (label + input)
+.form-group {
+  margin-bottom: var(--spacing-md);
+  width: 100%;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.form-actions {
+  @include flex-end;
+}
+
+// Label
+label {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+}
+
+// Input
+input:not([type='checkbox']):not([type='radio']):not([type='submit']):not([type='range']):not(
+    .vs__search
+  ),
+textarea,
+select,
+.form-input {
+  @include input-control;
+
+  &::placeholder {
+    color: var(--color-muted);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--primary);
+    background-color: var(--base);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+}
+
+.input-error {
+  border-color: var(--danger) !important;
+  background-color: color-mix(in srgb, var(--danger) 8%, var(--bg-low)) !important;
+}
+
+// // VueSelect — make it look like form-input
+.v-select {
+  width: 100%;
+
+  .vs__selected-options {
+    padding: 0;
+  }
+
+  .vs__search,
+  .vs__search:focus,
+  .vs__selected {
+    margin: 0;
+    padding: 0;
+  }
+
+  .vs__dropdown-toggle {
+    @include input-control;
+  }
+
+  .vs__search {
+    padding: 0;
+    margin: 0;
+  }
+
+  .vs__selected {
+  }
+}
+
+.vs__dropdown-toggle:has(:focus) {
+  border-color: var(--primary);
+  background-color: var(--base);
+}
+
+//   .vs__no-options {
+//     padding: var(--spacing-sm) var(--spacing-md);
+//     color: var(--color-muted);
+//   }
+// }
+
+.vs--single .vs__selected {
+  color: var(--color);
+}
+
+.vs__dropdown-menu {
+  @include dropdown-panel;
+  margin-top: 4px;
+  z-index: 9999999;
+}
+
+.vs__dropdown-option {
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--color);
+  background: transparent;
+  transition: background 0.15s ease;
+
+  &.vs__dropdown-option--selected {
+    background: var(--primary);
+    color: var(--bg-low);
+  }
+
+  &:hover,
+  &.vs__dropdown-option--highlight {
+    background-color: color-mix(
+      in srgb,
+      var(--muted-mix-color),
+      transparent var(--tag-active-mix-percent)
+    );
+    color: var(--primary);
+  }
+}
+
+.vs--multiple .vs__selected {
+  padding: 0 var(--spacing-sm);
+  color: var(--bg-low);
+  border-radius: 6px;
+  background: var(--primary);
+  border-color: var(--bg-low);
+}
+
+.vs--multiple:has(.vs__selected) .vs__dropdown-toggle {
+  padding-left: var(--spacing-sm);
+}
+
+.vs__open-indicator {
+  display: none !important;
+}
+
+.vs__actions {
+  position: relative;
+}
+
+.vs__actions::after {
+  content: '';
+  margin-left: 4px;
+  transition: transform var(--vs-transition-duration) var(--vs-transition-timing-function);
+  pointer-events: none;
+  @include caret-down(var(--vs-controls-color));
+}
+
+.vs--open .vs__actions::after {
+  transform: rotate(180deg);
+}
+
+.vs--loading .vs__actions::after {
+  opacity: 0;
+}
+
+// Text area
+textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+// Checkbox
+input[type='checkbox'] {
+  /* Remove default appearance */
+  appearance: none;
+  -webkit-appearance: none;
+
+  /* Draw our own square */
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--primary);
+  border-radius: 4px;
+  background-color: var(--bg-low);
+  cursor: pointer;
+  display: grid;
+  place-content: center;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: var(--primary);
+    background-color: color-mix(in srgb, var(--primary), transparent 90%);
+  }
+
+  &:checked {
+    background-color: var(--primary);
+    border-color: var(--primary);
+  }
+
+  /* Draw the checkmark via the ::before pseudo-element */
+  &::before {
+    content: '';
+    width: 10px;
+    height: 10px;
+    transform: scale(0);
+    transition: 120ms transform ease-in-out;
+    box-shadow: inset 1em 1em var(--color-inverted);
+
+    /* Checkmark shape (simple variant - square, complex - clip-path) */
+    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  }
+
+  &:checked::before {
+    transform: scale(1);
+  }
+
+  &:indeterminate {
+    background-color: var(--primary);
+    border-color: var(--primary);
+  }
+
+  &:indeterminate::before {
+    transform: scale(1);
+    clip-path: none;
+    width: 10px;
+    height: 2px;
+    background-color: var(--color-inverted);
+    box-shadow: none;
+  }
+
+  &:disabled {
+    background-color: var(--border-color);
+    cursor: not-allowed;
+    filter: grayscale(1);
+  }
+}
+
+// Label with checkbox
+.form-checkbox-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.app-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.app-checkbox--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.app-checkbox__label {
+  line-height: 1.4;
+}
+
+.input-icon-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.input-icon-toggle:hover:not(:disabled) {
+  color: var(--color);
+  background: var(--bg-hover);
+}
+
+.input-icon-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+// Validation error
+.form-error {
+  color: var(--danger);
+}
+
+// Hint
+.form-hint {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  display: block;
+}
+
+.btn-group {
+  display: inline-flex;
+  width: 100%;
+  border-radius: var(--radius);
+
+  & .app-button {
+    margin: 0 !important;
+    border-radius: 0;
+    width: 100%;
+  }
+
+  & .app-button:first-of-type {
+    border-radius: var(--radius) 0 0 var(--radius);
+  }
+
+  & .app-button:last-of-type {
+    border-radius: 0 var(--radius) var(--radius) 0;
+  }
+}
+
+button {
+  background: transparent;
+  color: var(--color);
+  border: none;
+  cursor: pointer;
+}

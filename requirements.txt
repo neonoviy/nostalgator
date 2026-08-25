@@ -1,0 +1,7 @@
+insightface==1.0.1
+opencv-python-headless==5.0.0.93
+
+# CPU-only ONNX Runtime (no CUDA acceleration, smaller footprint)
+onnxruntime==1.23.2
+
+numpy==2.1.3

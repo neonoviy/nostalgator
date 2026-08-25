@@ -1,0 +1,55 @@
+@use '../variables' as *;
+@use '../mixins' as *;
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  z-index: 1;
+  position: relative;
+  gap: var(--spacing-xl);
+  @include transition-base;
+}
+
+.year-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-xl);
+}
+
+// Container for TransitionGroup
+.events-list {
+  display: contents; /* To not break the year's flex structure */
+}
+
+.year-header {
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-xl);
+  background-color: var(--bg-low);
+  position: sticky;
+  top: 0;
+  z-index: $z-index-year-header;
+  border-bottom: 1px var(--border-color) solid;
+  font-weight: var(--font-weight-bold);
+}
+
+.end-of-list {
+  text-align: center;
+  padding: var(--spacing-xl);
+}
+
+.no-events-hint {
+  width: 300px;
+  margin: 0 auto;
+  text-align: left;
+  font-size: 18px;
+}
+
+.no-events-hint ul {
+  margin-left: 0px;
+  list-style: none;
+}
+
+.no-events-hint ul li {
+  margin-top: 4px;
+}

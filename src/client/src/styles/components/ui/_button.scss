@@ -1,0 +1,125 @@
+@use '../../variables' as *;
+@use '../../mixins' as *;
+
+.app-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius);
+  border: none;
+  cursor: pointer;
+  font-size: var(--font-size);
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: center;
+  white-space: nowrap;
+  user-select: none;
+  transition: all 0.2s ease;
+  background: var(--secondary);
+  color: var(--primary);
+  background-image: linear-gradient(to top, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.01));
+  box-shadow:
+    inset 0px -1px 2px 0px rgba(0, 0, 0, 0.1),
+    inset 0px 1px 2px 0px rgba(255, 255, 255, 0.24);
+}
+
+.app-button:hover:not(:disabled) {
+  background-color: var(--secondary-accent);
+}
+
+.app-button:active:not(:disabled),
+.app-button.active {
+  box-shadow: inset 0 1px 4px 2px rgba(0, 0, 0, 0.1);
+  background-color: var(--bg-high);
+}
+
+.app-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  color: var(--color-muted);
+}
+
+.app-button--primary {
+  background-color: var(--primary);
+  color: var(--bg-low);
+}
+
+.app-button--primary:hover:not(:disabled) {
+  background-color: var(--primary-accent);
+}
+
+.app-button--danger {
+  background-color: var(--danger);
+  color: #fff;
+}
+
+.app-button--danger:hover:not(:disabled) {
+  background-color: var(--danger-accent);
+}
+
+.app-button--sm {
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-xs);
+}
+
+.app-button--lg {
+  padding: var(--spacing-md) var(--spacing-xl);
+  font-size: var(--font-size-base);
+}
+
+.app-button--icon-only {
+  padding: var(--spacing-sm);
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-button--icon-only.app-button--sm {
+  padding: var(--spacing-xs);
+}
+
+.app-button--icon-only.app-button--lg {
+  padding: var(--spacing-md);
+}
+
+.app-button__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.app-button:has(.app-button__label) .app-button__icon {
+  margin-right: 4px;
+  margin-left: 4px;
+}
+
+.app-button__spinner,
+.app-button__success {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.app-button__label {
+  display: inline-flex;
+  align-items: center;
+}
+
+.app-button--saving {
+  background-image: url(/loading.gif);
+  background-size: contain;
+}
+
+.app-button--saving:disabled {
+  opacity: 1;
+}
+
+.app-button--saving span {
+  background: #000;
+  padding: 0 8px;
+  margin-left: -8px;
+  margin-right: -8px;
+  color: #fff;
+}

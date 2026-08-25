@@ -1,0 +1,129 @@
+@use '../../variables' as *;
+@use '../../mixins' as *;
+
+// ============================================
+// VueDatePicker — make it look like form-input
+// ============================================
+
+.dp__input {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-low);
+  box-sizing: border-box;
+  color: var(--color);
+  @include transition-base;
+
+  &::placeholder {
+    color: var(--color-muted);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--primary);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+}
+
+.dp__arrow_top {
+  background: var(--bg-low) !important;
+  border-color: var(--border-color) !important;
+}
+
+.dp__menu,
+.dp__overlay {
+  background: var(--bg-low) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: $shadow-md !important;
+  border-color: var(--border-color) !important;
+  color: var(--color);
+}
+
+.dp__header {
+  color: var(--color);
+}
+
+.dp__inner_nav,
+.dp__header_calendar_icon,
+.dp__calendar_header,
+.dp__header_icon {
+  color: var(--color-muted);
+}
+
+.dp__calendar_header_separator {
+  background: var(--border-color) !important;
+}
+
+.dp__cell {
+  padding: var(--spacing-xs);
+}
+
+.dp__cell_inner {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius);
+  color: var(--color);
+  transition: background-color var(--transition-fast);
+}
+
+.dp__date_hover_end:hover,
+.dp__date_hover_start:hover,
+.dp__date_hover:hover,
+.dp__overlay_cell:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--muted-mix-color),
+    transparent var(--tag-active-mix-percent)
+  );
+  color: var(--primary);
+}
+
+.dp__range_end,
+.dp__range_start,
+.dp__active_date,
+.dp__overlay_cell_active {
+  background: var(--primary) !important;
+  color: var(--bg-low) !important;
+}
+
+.dp__today {
+  border-color: var(--primary);
+}
+
+.dp__month_year_select,
+.dp__year_select,
+.dp__btn,
+.dp--arrow-btn-nav {
+  background: var(--bg-low);
+  border-radius: var(--radius);
+  color: var(--color);
+
+  &:hover {
+    background-color: color-mix(
+      in srgb,
+      var(--muted-mix-color),
+      transparent var(--tag-active-mix-percent)
+    );
+    color: var(--primary);
+  }
+}
+
+.dp__footer {
+  color: var(--color);
+}
+
+.dp__action_button {
+  background: var(--secondary);
+  color: var(--primary);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+  transition: background-color var(--transition-fast);
+
+  &:hover {
+    background: var(--secondary-accent);
+  }
+}

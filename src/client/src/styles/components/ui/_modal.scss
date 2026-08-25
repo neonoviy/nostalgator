@@ -1,0 +1,87 @@
+@use '../../variables' as *;
+@use '../../mixins' as *;
+
+.modal-overlay {
+  @include overlay-backdrop;
+  background: rgba(var(--base-rgb), 50%);
+  @include flex-center;
+  z-index: $z-index-modal-overlay;
+  backdrop-filter: blur(40px);
+  padding: var(--spacing-sm);
+}
+
+.modal-content {
+  @include panel;
+  width: 100%;
+  max-height: 95vh;
+  overflow: hidden;
+
+  &.small {
+    max-width: 500px;
+  }
+
+  &.medium {
+    max-width: 600px;
+  }
+
+  &.large {
+    max-width: 900px;
+  }
+
+  &.fullscreen {
+    max-width: 95vw;
+  }
+}
+
+.modal-header {
+  @include flex-between;
+  align-items: flex-end;
+  padding: var(--spacing-sm) var(--spacing-md);
+  flex-shrink: 0;
+}
+
+.close-button {
+  @include icon-button;
+  font-size: 32px;
+  line-height: 32px;
+  color: var(--color);
+
+  &:hover {
+    color: var(--danger);
+  }
+}
+
+.modal-body {
+  padding: var(--spacing-sm) var(--spacing-md);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-footer {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-top: 1px solid var(--border-color);
+  @include flex-end;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+// Transition
+.modal-enter-active,
+.modal-leave-active {
+  @include transition-slow;
+
+  .modal-content {
+    @include transition-slow;
+  }
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+.modal-enter-from .modal-content,
+.modal-leave-to .modal-content {
+  opacity: 0;
+  transform: scale(0.95) translateY(-20px);
+}

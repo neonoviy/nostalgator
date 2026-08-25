@@ -1,0 +1,53 @@
+name: nostalgator
+#   docker compose up nostalgator        # CPU-вариант
+#   docker compose up nostalgator-cuda   # CUDA-вариант (требует NVIDIA GPU + container toolkit)
+
+services:
+  nostalgator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-2.0.0}
+    image: nostalgator:2.0.0-alpha
+    container_name: nostalgator
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-3001}:3001"
+    volumes:
+      - ./Originals:/data/Originals:delegated
+      - ./Thumbnails:/data/Thumbnails:delegated
+      - ./Import:/data/Import:delegated
+    env_file: .env.docker
+
+  nostalgator-cuda:
+    build:
+      context: .
+      dockerfile: Dockerfile.cuda
+      args:
+        APP_VERSION: ${APP_VERSION:-2.0.0}
+    image: nostalgator-cuda:2.0.0-alpha
+    container_name: nostalgator-cuda
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-3001}:3001"
+    volumes:
+      - ./Originals:/data/Originals:delegated
+      - ./Thumbnails:/data/Thumbnails:delegated
+      - ./Import:/data/Import:delegated
+    env_file: .env.docker
+    environment:
+      # Without "compute" the NVIDIA runtime only mounts nvidia-smi (libcuda is
+      # missing) and the CUDAExecutionProvider cannot initialize.
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+    # GPU passthrough. With modern Docker Compose (v2) the deploy.reservations
+    # block below IS honored by "docker compose up". For "docker stack deploy"
+    # (Swarm) it is also required. `docker run` users pass --gpus all instead.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

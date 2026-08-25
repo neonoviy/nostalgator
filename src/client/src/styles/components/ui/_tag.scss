@@ -1,0 +1,49 @@
+@use '../../variables' as *;
+@use '../../mixins' as *;
+
+.tag-badge {
+  @include flex-start;
+  margin-right: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+  cursor: pointer;
+  padding: 0 var(--spacing-xs);
+  border-radius: 4px;
+  color: var(--primary-light);
+  @include transition-base;
+
+  &:hover:not(.tag-badge-disabled) {
+    background-color: color-mix(
+      in srgb,
+      var(--muted-mix-color),
+      transparent var(--tag-active-mix-percent)
+    );
+    color: var(--primary);
+  }
+
+  &:hover .tag-badge-count {
+    opacity: 1;
+  }
+
+  &:has(:checked) {
+    background-color: var(--primary-accent);
+    color: var(--bg-low);
+  }
+
+  & .tag-badge-checkbox {
+    display: none;
+  }
+  & .tag-badge-name {
+  }
+
+  & .tag-badge-count {
+    font-size: 9px;
+    opacity: 0.7;
+    line-height: 0;
+  }
+}
+
+.tag-badge-disabled {
+  opacity: 0.7;
+  color: var(--color-muted);
+  cursor: default;
+}

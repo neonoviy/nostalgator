@@ -1,0 +1,118 @@
+@use '../../variables' as *;
+@use '../../mixins' as *;
+
+.fancybox__sidebar {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.lightbox-sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--spacing-md) 62px var(--spacing-md);
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  .sidebar-header {
+    margin-bottom: var(--spacing-sm);
+    border-bottom: 1px solid var(--color-muted);
+  }
+
+  .file-info {
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .info-row {
+    display: flex;
+    justify-content: flex-start;
+    padding: var(--spacing-xs) 0;
+
+    .label {
+      margin-right: var(--spacing-sm);
+      width: 100px;
+      text-align: right;
+      color: var(--color-muted);
+    }
+
+    .value {
+      word-break: break-word;
+    }
+  }
+
+  .exif-data {
+    flex: 1;
+
+    .section-title {
+      margin: var(--spacing-md) 0 var(--spacing-sm);
+      padding-top: var(--spacing-sm);
+      border-bottom: 1px solid var(--color-muted);
+    }
+  }
+
+  .loading,
+  .error,
+  .no-exif {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: var(--spacing-lg);
+  }
+
+  .error {
+    color: var(--danger);
+  }
+
+  .no-exif {
+    font-style: italic;
+  }
+
+  .delete-media-section {
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--color-muted);
+  }
+
+  .delete-media-button {
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--danger);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+
+    &:hover:not(:disabled) {
+      opacity: 0.9;
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}
+
+@media screen and (max-width: 720px) {
+  /* Перестраиваем сетку в одну колонку */
+  .fancybox__grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Прячем сайдбар по умолчанию на мобильных */
+  .fancybox__sidebar {
+    display: none !important;
+    width: 100% !important;
+    padding: 15px !important; /* Вернем аккуратные отступы для контента */
+  }
+
+  /* Показываем сайдбар, только если у главного контейнера есть активный класс */
+  .fancybox__container.has-sidebar .fancybox__sidebar {
+    display: block !important;
+  }
+}

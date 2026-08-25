@@ -1,0 +1,295 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Event {
+  id              Int      @id @default(autoincrement())
+  folderPath      String   @unique  // Относительный путь: "2021/08.22 прогулка" (нормализованный)
+  year            Int               // Год события (извлекается из папки YYYY)
+  date            DateTime?         // Дата события (может быть null для папок без даты)
+  title           String            // = folderName (имя папки)
+  searchableTitle String   // Нормализованный заголовок для поиска (в нижнем регистре)
+  thumbnailPath   String?
+  mediaCount      Int      @default(0)
+  lastScannedAt   DateTime?         // Время последнего сканирования папки
+  allowedGroupIds String?           // JSON: "[1,3,5]" — ID групп (null/пусто = PUBLIC)
+  uploadedById    Int?              // пользователь, загрузивший через Import
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Связи многие-ко-многим через промежуточные таблицы
+  eventLocations      EventLocation[]
+  eventClusters       EventCluster[]
+  eventEventTypes     EventEventType[]
+  eventParticipants   EventParticipant[]
+  eventTags           EventTag[]
+  media               Media[]
+
+  @@index([year])
+}
+
+// Промежуточная таблица для связи Event и Place (многие-ко-многим)
+model EventLocation {
+  id              Int    @id @default(autoincrement())
+  eventId         Int
+  locationId      Int
+  allowedGroupIds String? // копия из Event.allowedGroupIds — для denorm visibility
+
+  event      Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  location   Place  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, locationId])
+}
+
+// Промежуточная таблица для связи Event и EventType (многие-ко-многим)
+model EventEventType {
+  id              Int       @id @default(autoincrement())
+  eventId         Int
+  eventTypeId     Int
+  allowedGroupIds String? // копия из Event.allowedGroupIds — для denorm visibility
+
+  event       Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventType   EventType @relation(fields: [eventTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, eventTypeId])
+}
+
+// Промежуточная таблица для связи Event и Participant (многие-ко-многим)
+model EventParticipant {
+  id              Int       @id @default(autoincrement())
+  eventId         Int
+  participantId   Int
+  allowedGroupIds String? // копия из Event.allowedGroupIds — для denorm visibility
+
+  event       Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  participant Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, participantId])
+}
+
+// Промежуточная таблица для связи Event и Tag (многие-ко-многим)
+model EventTag {
+  id              Int    @id @default(autoincrement())
+  eventId         Int
+  tagId           Int
+  tagType         String // place|eventType|participant|tag — денормализация для быстрого подсчёта
+  allowedGroupIds String // копия из Event.allowedGroupIds — для быстрого подсчёта тегов без JOIN
+
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tag     Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, tagId])
+}
+
+model Media {
+  id          Int      @id @default(autoincrement())
+  eventId     Int
+  filename    String
+  mimeType    String
+  fileSize    Int
+  fileHash    String?  // SHA-256 хеш первого чанка, для дедупликации
+  capturedAt  DateTime? // EXIF DateTimeOriginal
+  latitude    Float?   // GPS координаты
+  longitude   Float?   // GPS координаты
+  width       Int?
+  height      Int?
+  duration    Float?   // For videos
+  uploadedById Int?     // пользователь, загрузивший этот файл
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  placeId   Int?
+  clusterId   Int?
+  // Связи
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  place       Place?   @relation(fields: [placeId], references: [id])
+  cluster     Cluster?   @relation(fields: [clusterId], references: [id])
+
+  faces Face[]
+
+  @@unique([eventId, filename])
+  @@index([eventId])
+  @@index([mimeType])
+  @@index([fileHash])
+  @@index([capturedAt])
+  @@index([latitude, longitude])
+  @@index([placeId])
+}
+
+model Person {
+  id            Int      @id @default(autoincrement())
+  thumbnailPath String?
+  participantId Int?
+  descriptor    String?
+  faceCount     Int      @default(0)
+  createdAt     DateTime @default(now())
+  participant   Participant? @relation(fields: [participantId], references: [id])
+  faces         Face[]
+  @@index([participantId])
+}
+
+model Face {
+  id         Int      @id @default(autoincrement())
+  mediaId    Int
+  personId   Int
+  x          Int
+  y          Int
+  w          Int
+  h          Int
+  confidence Float?
+  descriptor String?
+  createdAt  DateTime @default(now())
+  media      Media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  person     Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  @@unique([mediaId, personId, x, y, w, h])
+  @@index([personId])
+  @@index([mediaId])
+}
+
+model Setting {
+  id                  Int      @id @default(autoincrement())
+  originalsPath       String
+  thumbnailsPath      String
+  theme               String   @default("light")
+  originalsWatchEnabled Boolean @default(false)  // Наблюдение за Originals
+  importWatchEnabled  Boolean  @default(false)  // Наблюдение за Import
+  scanAllowedGroupIds String?  // JSON: "[1,3]" | null
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model Place {
+  id        Int     @id @default(autoincrement())
+  name      String  @unique
+  latitude  Float?
+  longitude Float?
+  radius    Int?
+  polygon   String?
+  cityId    Int?    @unique   // стабильный идентификатор из all-the-cities
+  // Агрегационные поля
+  latSum    Float   @default(0)
+  lngSum    Float   @default(0)
+  mediaCount Int    @default(0)
+  // Связи
+  eventLocations EventLocation[]
+  clusters       ClusterPlace[]
+  media          Media[]
+
+  @@index([latitude, longitude])
+}
+
+model Cluster {
+  id        Int     @id @default(autoincrement())
+  name      String  @unique
+  latitude  Float?
+  longitude Float?
+  radius    Int?
+  // Агрегационные поля
+  latSum    Float   @default(0)
+  lngSum    Float   @default(0)
+  mediaCount Int    @default(0)
+
+  // Связи
+  eventClusters EventCluster[]
+  media          Media[]
+  places        ClusterPlace[]
+
+  @@index([latitude, longitude])
+}
+
+model ClusterPlace {
+  id        Int @id @default(autoincrement())
+  clusterId Int
+  placeId   Int
+
+  cluster   Cluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  place     Place   @relation(fields: [placeId], references: [id], onDelete: Cascade)
+
+  @@unique([clusterId, placeId])
+}
+
+// Промежуточная таблица для связи Event и Cluster (многие-ко-многим)
+model EventCluster {
+  id              Int    @id @default(autoincrement())
+  eventId         Int
+  clusterId      Int
+  allowedGroupIds String? // копия из Event.allowedGroupIds — для denorm visibility
+
+  event      Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  cluster   Cluster  @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, clusterId])
+}
+
+model EventType {
+  id   Int   @id @default(autoincrement())
+  type String @unique
+  eventEventTypes EventEventType[] // Связь многие-ко-многим с Event
+}
+
+model Participant {
+  id   Int   @id @default(autoincrement())
+  name String @unique
+  persons Person[]
+  eventParticipants EventParticipant[] // Связь многие-ко-многим с Event
+}
+
+model Tag {
+  id   Int   @id @default(autoincrement())
+  name String @unique
+  eventTags EventTag[] // Связь многие-ко-многим с Event
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  role         String   @default("user")  // "admin" или "user"
+  canUpload    Boolean  @default(false)   // может загружать файлы
+  createdAt    DateTime @default(now())
+
+  groups   UserGroup[]
+  sessions Session[]
+}
+
+// Group — новая таблица:
+model Group {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  deleted   Boolean  @default(false)   // soft delete
+  canUpload Boolean  @default(false)   // разрешение на загрузку файлов
+  createdAt DateTime @default(now())
+
+  users     UserGroup[]
+}
+
+// UserGroup — many-to-many:
+model UserGroup {
+  userId  Int
+  groupId Int
+
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId])
+  @@index([userId])
+  @@index([groupId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    Int
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+}

@@ -1,0 +1,57 @@
+@use '../../variables' as *;
+@use '../../mixins' as *;
+@use 'sass:color';
+
+.filter-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+
+  &-scroll {
+    padding: 0 var(--spacing-md);
+    flex: 1;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-bottom: 60px;
+  }
+
+  .clear-filters-container {
+    position: fixed;
+    bottom: -70px;
+    width: 300px;
+    border-top: 1px solid var(--border-color);
+    padding-top: var(--spacing-md);
+    @include transition-base;
+
+    &.active {
+      bottom: 0;
+    }
+  }
+  // Reset filters button
+  .clear-filters-button {
+    width: 100%;
+    margin-bottom: var(--spacing-md);
+  }
+
+  // Filter sections
+}
+
+.filter-section {
+  margin-bottom: var(--spacing-lg);
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  li {
+    margin: 0;
+    display: inline-block;
+  }
+}
+
+.sidebar .filter-section ul {
+  margin-left: -4px;
+}

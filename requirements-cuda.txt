@@ -1,0 +1,24 @@
+# insightface ставится отдельно через `pip install --no-deps`, чтобы не тянуть
+# CPU-пакет onnxruntime (он перезаписывает ядро onnxruntime-gpu и ломает CUDAExecutionProvider).
+# Ниже — явно перечислены ВСЕ остальные зависимости insightface (кроме onnxruntime),
+# иначе при --no-deps они не подтянутся и импорт insightface упадёт.
+opencv-python-headless==5.0.0.93
+numpy==2.1.3
+onnx
+tqdm
+requests
+scipy
+scikit-image
+
+onnxruntime-gpu
+
+# Я сильно сомневаюсь, что это всё действительно нужно при наличии NVIDIA Container Toolkit
+nvidia-cuda-runtime-cu112
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
+nvidia-cufft-cu12
+nvidia-curand-cu12
+nvidia-nvjitlink-cu12
+nvidia-cufft-cu12
+nvidia-curand-cu12
+nvidia-nvjitlink-cu12
