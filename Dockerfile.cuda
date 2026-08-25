@@ -25,7 +25,8 @@ COPY requirements-cuda.txt ./
 # Поэтому ставим insightface отдельно через --no-deps, а его зависимости (numpy, onnx,
 # opencv, tqdm, requests, scipy, scikit-image) — из requirements-cuda.txt. onnxruntime
 # предоставляет GPU-сборка onnxruntime-gpu (установлена там же).
-RUN pip3 install --no-cache-dir --target /opt/python-deps -r requirements-cuda.txt \
+RUN mkdir -p /opt/python-deps \
+  && pip3 install --no-cache-dir --target /opt/python-deps -r requirements-cuda.txt \
   && pip3 install --no-deps --target /opt/python-deps insightface==1.0.1 \
   && rm -rf /root/.cache/pip \
   && find /opt/python-deps -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \

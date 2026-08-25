@@ -1,77 +1,78 @@
+[English](README.md) | [Русский](README.ru.md)
+
 # Nostalgator
 
-Self-hosted photo and video archive viewer with automatic place recognition (EXIF/Nominatim) and face recognition (InsightFace).
+A program for viewing a photo archive with automatic place and face recognition. Use it on your homelab or NAS. Or don't — it's aplha.
 
 # WARNING
 
-It's vibecoded. I have not ever read this readme. I will fix it later.
+This project is heavily vibecoded. Proceed accordingly.
 
 ## Features
 
-- Year-grouped timeline with infinite scroll
-- EXIF extraction (datetime, GPS) via `exiftool-vendored`
+- Nostalgator displays a photo folder in the following format: `/YYYY/MM.DD Event Name`
+  — A timeline of event folders is shown. Each event can be assigned tags: Participants, Location, Event Type, Tag
+- Filtering by tags and years is available
+- You can draw a polygon on the map, and all events containing photos with GPS tags inside that polygon will receive the corresponding location tag.
+- You can assign a name to a face in a photo, and all events with that person will receive a participant label.
+- Access control is implemented.
+- Drag-and-drop file upload to the import folder is supported.
+- Everything placed in the import folder is moved to Originals into `/YYYY/MM.DD/` (if this feature is enabled in settings)
+
+## Technical Details
+
+- EXIF extraction (date/time, GPS) via `exiftool-vendored`
 - Reverse geocoding via Nominatim; place clustering via `@turf/turf`, `geokdbush`, `kdbush`
 - Interactive map (MapLibre/MapTiler)
-- InsightFace face recognition in Python worker (`buffalo_l` models, ONNX Runtime)
-- Persistent recognition mode with descriptor caching (`Float32Array`) for 50K+ scale
-- Passerby heuristic (1-photo persons excluded from matching)
+- Face recognition via InsightFace in a Python worker (`buffalo_l` models, ONNX Runtime)
+- Persistent mode with descriptor caching (`Float32Array`) for 50K+ scales
 - Thumbnail generation: `sharp` for images, `fluent-ffmpeg` for videos
-- Background scan queue with WebSocket progress
+- Background scan queue with progress via WebSocket
 - Drag-and-drop import with background processing
-- JWT authentication, role-based access (`admin`/`user`), group-based event access
-- Tags, groups, event types, participants, date-range filters
-- Dark mode
-- Swagger API docs at `/api-docs`
-- Self-hosted, no cloud dependencies
+- JWT authentication, role-based access (`admin`/`user`), event access by groups
+- Filters by tags, groups, event types, participants, locations, date range
+- Dark theme
+- Swagger API documentation at `/api-docs`
+- Self-hosted deployment, no cloud services required
 
 ## Tech Stack
 
 - **Backend:** Node.js, Express, Prisma (SQLite), `exiftool-vendored`, `fluent-ffmpeg`, `sharp`, `@turf/turf`, `geokdbush`, `kdbush`, `ws`, `swagger-jsdoc`
 - **Frontend:** Vue 3, Vite, Pinia, Vue Router, Vue I18n, MapLibre
 - **ML:** InsightFace (`buffalo_l`), ONNX Runtime (CPU/CUDA), Python worker
-- **Infrastructure:** Docker multi-stage (CPU + CUDA), NVIDIA Container Toolkit
+- **Infrastructure:** Docker multi-stage build (CPU + CUDA), NVIDIA Container Toolkit
 
 ## Architecture
 
-Node.js/Express backend + Vue 3 SPA. Face recognition runs in a separate Python child process (`face_worker.py`) communicating via stdin/stdout. REST API + WebSocket for real-time updates.
+Node.js/Express backend + Vue 3 SPA. Face recognition runs in a separate Python process (`face_worker.py`) via stdin/stdout. Communication is via REST API + WebSocket for real-time events.
 
 ## Quick Start
 
 ```bash
-# 1. Clone
+# 1. Clone the repository
 git clone https://github.com/neonoviy/nostalgator.git
 cd nostalgator
 
 # 2. Install dependencies
 npm install
 
-# 3. Initialize environment and database
-npm run setup
-
-# 4. Start development servers
+# 3. Start development servers
 npm run dev-all
 ```
 
 ## Configuration
 
-Copy `.env.example` to `.env` and adjust paths and keys:
+Copy `.env.example` to `.env` and configure paths and keys:
 
-| Variable                | Purpose                                                       |
-| ----------------------- | ------------------------------------------------------------- |
-| `ORIGINALS_PATH`        | Path to original photos/videos                                |
-| `THUMBNAILS_PATH`       | Path for generated thumbnails + SQLite database               |
-| `IMPORT_PATH`           | Path for drag-and-drop imports                                |
-| `SERVER_PORT`           | Backend port (default `3001`)                                 |
-| `JWT_SECRET`            | Secret for JWT authentication                                 |
-| `MAPTILER_KEY`          | MapTiler API key for map tiles                                |
-| `NOMINATIM_EMAIL`       | Email for Nominatim reverse geocoding requests                |
-| `AUTODETECT_PLACES`     | Auto-detect places from EXIF GPS (`true`/`false`)             |
-| `AUTODETECT_FACES`      | Auto-run face recognition after scan (`true`/`false`)         |
-| `FACE_PERSISTENT`       | Run recognition in persistent stream mode (`true`/`false`)    |
-| `FACE_MATCH_THRESHOLD`  | Cosine similarity threshold for face matching (default `0.6`) |
-| `FACE_CHUNK_SIZE`       | Images per Python worker batch (default `200`)                |
-| `FACE_CHUNK_TIMEOUT`    | Timeout per chunk in seconds (default `600`)                  |
-| `SCAN_INTERVAL_MINUTES` | Auto-scan interval in minutes                                 |
+| Variable               | Purpose                                                       |
+| ---------------------- | ------------------------------------------------------------- |
+| `ORIGINALS_PATH`       | Path to original photos/videos                                |
+| `THUMBNAILS_PATH`      | Path for thumbnails + SQLite database                         |
+| `IMPORT_PATH`          | Path for drag-and-drop import folder                          |
+| `SERVER_PORT`          | Backend port (default `3001`)                                 |
+| `AUTODETECT_PLACES`    | Auto-detect places from EXIF GPS (`true`/`false`)             |
+| `AUTODETECT_FACES`     | Auto-start face recognition after scan (`true`/`false`)       |
+| `FACE_MATCH_THRESHOLD` | Cosine similarity threshold for face matching (default `0.6`) |
 
 ## Docker
 
@@ -79,32 +80,26 @@ Copy `.env.example` to `.env` and adjust paths and keys:
 
 The project provides two Docker images:
 
-| Image                          | Purpose                    | Size    | GPU                     |
-| ------------------------------ | -------------------------- | ------- | ----------------------- |
-| `nostalgator:2.0.0-alpha`      | CPU-only, no CUDA deps     | ~2.9 GB | Not required            |
-| `nostalgator-cuda:2.0.0-alpha` | CUDA runtime libs baked in | ~6-8 GB | Required (`--gpus all`) |
-
-Both services in `docker-compose.yml` share port 3001 and the same volumes — only one can run at a time.
+| Image                          | Purpose                                                            | Size  | GPU                     |
+| ------------------------------ | ------------------------------------------------------------------ | ----- | ----------------------- |
+| `nostalgator:2.0.0-alpha`      | CPU-only, no CUDA dependencies                                     | ~3 GB | Not required            |
+| `nostalgator-cuda:2.0.0-alpha` | onnxruntime-gpu + cuDNN, CUDA runtime via NVIDIA Container Toolkit | 8 GB  | Required (`--gpus all`) |
 
 ### Prerequisites
 
-Before starting, you **must** prepare three host directories that the container will use. These are mandatory — the container will not run without them:
+You need 3 folders:
 
-| Container mount    | Purpose                                | Your host path      |
-| ------------------ | -------------------------------------- | ------------------- |
-| `/data/Originals`  | Original photos and videos             | e.g. `./Originals`  |
-| `/data/Thumbnails` | Generated thumbnails + SQLite database | e.g. `./Thumbnails` |
-| `/data/Import`     | Drag-and-drop import staging           | e.g. `./Import`     |
+| Container mount    | Purpose                           |
+| ------------------ | --------------------------------- |
+| `/data/Originals`  | Original photos and videos        |
+| `/data/Thumbnails` | Thumbnails + SQLite database      |
+| `/data/Import`     | Staging for drag-and-drop imports |
 
 Create them before running the container:
 
-```bash
-mkdir -p ./Originals ./Thumbnails ./Import
-```
+> **Important:** The `/data/Thumbnails` directory stores the SQLite database (`nostalgator.db`). Backing up this directory preserves your database.
 
-> **Important:** The `/data/Thumbnails` directory stores the SQLite database (`nostalgator.db`). Back up this directory to preserve your database.
-
-### Step-by-step: build and run
+### Step-by-step build and run
 
 #### 1. Clone the repository
 
@@ -123,35 +118,17 @@ Choose the variant that matches your hardware:
 docker compose build nostalgator
 ```
 
-Or manually:
-
-```bash
-docker build -t nostalgator:2.0.0-alpha .
-```
-
 **CUDA (requires NVIDIA GPU + NVIDIA Container Toolkit):**
 
 ```bash
 docker compose build nostalgator-cuda
 ```
 
-Or manually:
-
-```bash
-docker build -f Dockerfile.cuda -t nostalgator-cuda:2.0.0-alpha .
-```
-
 #### 3. Run the container
 
-Replace `/path/to/Originals`, `/path/to/Thumbnails`, `/path/to/Import` with your actual host paths.
+Replace `/path/to/Originals`, `/path/to/Thumbnails`, `/path/to/Import` with actual paths on your host.
 
-**CPU via Compose:**
-
-```bash
-docker compose up nostalgator
-```
-
-**CPU manually:**
+**CPU:**
 
 ```bash
 docker run -d --name nostalgator -p 3001:3001 \
@@ -161,13 +138,7 @@ docker run -d --name nostalgator -p 3001:3001 \
   nostalgator:2.0.0-alpha
 ```
 
-**CUDA via Compose:**
-
-```bash
-docker compose up nostalgator-cuda
-```
-
-**CUDA manually:**
+**CUDA:**
 
 ```bash
 docker run -d --name nostalgator-cuda --gpus all -p 3001:3001 \
@@ -179,14 +150,7 @@ docker run -d --name nostalgator-cuda --gpus all -p 3001:3001 \
 
 #### 4. Verify
 
-Open http://localhost:3001 in your browser. Check the logs for startup status:
-
-```bash
-docker logs -f nostalgator
-```
-
-- CPU variant logs: `=== Запуск Node.js приложения (CPU) ===`
-- CUDA variant logs: `[GPU] NVIDIA libs загружены в LD_LIBRARY_PATH`
+Open http://localhost:3001 in your browser.
 
 #### 5. Stop
 
@@ -202,32 +166,20 @@ docker stop nostalgator && docker rm nostalgator
 
 ### CUDA image details
 
-Includes `onnxruntime-gpu` and NVIDIA cu12 runtime libraries (cublas, cudnn, cufft, curand, nvjitlink) baked in at build time. Requires an NVIDIA GPU and the NVIDIA Container Toolkit.
+The image includes `onnxruntime-gpu` and `nvidia-cudnn-cu12`. CUDA runtime libraries (libcudart, cublas, cufft, curand, etc.) are not built into the image — they are provided by the host via **NVIDIA Container Toolkit** when running with the `--gpus all` flag. cuDNN is not provided by the Toolkit and is installed via pip. This reduces image size compared to building all cu12 libraries.
 
-> **Windows:** Ensure Docker Desktop is configured with the WSL 2 backend and that the [NVIDIA driver for WSL](https://www.nvidia.com/drivers/data-center/winusb-driver-for-wsl) is installed. The RTX 3080 Ti requires driver version 535 or newer.
+> **Windows:** Ensure Docker Desktop is configured for the WSL 2 backend and the [NVIDIA driver for WSL](https://www.nvidia.com/drivers/data-center/winusb-driver-for-wsl) is installed. The RTX 3080 Ti requires driver version 535 or newer.
 
 ## npm Scripts
 
-| Script                   | Description                           |
-| ------------------------ | ------------------------------------- |
-| `npm run dev`            | Start Vite dev server                 |
-| `npm run server`         | Start Express API server              |
-| `npm run dev-all`        | Start both servers concurrently       |
-| `npm run setup`          | Initialize `.env` and database        |
-| `npm run build`          | Build production bundle               |
-| `npm run preview`        | Preview production build              |
-| `npm run init-env`       | Initialize `.env` from `.env.example` |
-| `npm run db:reset`       | Reset database                        |
-| `npm run db:seed`        | Seed database                         |
-| `npm run import`         | Import media from Import folder       |
-| `npm run reset-password` | Reset admin password                  |
-| `npm run docs`           | Generate JSDoc API docs               |
-| `npm run test`           | Run Node.js tests                     |
-| `npm run lint`           | Run ESLint                            |
-| `npm run lint:fix`       | Fix ESLint errors                     |
-| `npm run format`         | Format code with Prettier             |
-| `npm run format:check`   | Check code formatting                 |
+| Script                   | Purpose                           |
+| ------------------------ | --------------------------------- |
+| `npm run dev-all`        | Start both servers simultaneously |
+| `npm run reset-password` | Reset admin password              |
+| `npm run docs`           | Generate JSDoc API documentation  |
+| `npm run test`           | Run Node.js tests                 |
+| `npm run lint`           | Run ESLint                        |
 
 ## License
 
-This project is licensed under the **AGPL-3.0** — see the [LICENSE](LICENSE) file for details.
+The project is distributed under the **AGPL-3.0** license — see the [LICENSE](LICENSE) file for details.
