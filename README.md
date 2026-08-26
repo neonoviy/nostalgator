@@ -4,6 +4,10 @@
 
 A program for viewing a photo archive with automatic place and face recognition. Use it on your homelab or NAS. Or don't — it's aplha.
 
+![Timeline](screenshots/nostalgator.png)
+![Photo info](screenshots/photo-details.png)
+![Event settings](screenshots/event-settings.png)
+
 # WARNING
 
 This project is heavily vibecoded. Even this Readme. Proceed accordingly.

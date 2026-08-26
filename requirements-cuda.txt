@@ -10,10 +10,11 @@ requests
 scipy
 scikit-image
 
-onnxruntime-gpu
+onnxruntime-gpu==1.23.2
+
 
 # Я сильно сомневаюсь, что это всё действительно нужно при наличии NVIDIA Container Toolkit
-nvidia-cuda-runtime-cu112
+nvidia-cuda-runtime-cu12
 nvidia-cublas-cu12
 nvidia-cudnn-cu12
 nvidia-cufft-cu12
