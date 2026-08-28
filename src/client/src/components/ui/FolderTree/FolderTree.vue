@@ -50,115 +50,129 @@
     return map
   }
 
-  function isLeafPathSelected(leafPath, selectedPaths) {
-    const selectedSet = new Set(selectedPaths)
-    if (selectedSet.has('')) return true
-    if (selectedSet.has(leafPath)) return true
-    const parts = leafPath.split('/').filter(Boolean)
-    if (parts.length >= 2 && selectedSet.has(parts[0])) return true
+  // One-level folder fetch from the backend (lazy loading).
+  async function loadChildren(nodePath) {
+    const authToken = localStorage.getItem('auth_token')
+    const response = await fetch(
+      '/api/scan/folders?path=' + encodeURIComponent(nodePath || ''),
+      {
+        headers: {
+          Authorization: authToken ? `Bearer ${authToken}` : '',
+          'Cache-Control': 'no-cache',
+        },
+      },
+    )
+    if (!response.ok) throw new Error('Failed to load folders')
+    const result = await response.json()
+    return result.data || result
+  }
+
+  // Fetch a node's children and attach them to the live tree node.
+  async function attachChildren(node) {
+    const key = node.path !== undefined ? node.path : node.name
+    const data = await loadChildren(key)
+    const map = buildNodeMap(props.tree)
+    const target = map.get(key) || node
+    target.children = data.children
+    target.hasChildren = data.hasChildren
+    target.loaded = true
+    return target
+  }
+
+  // Selected paths are already explicit (years / events); just drop the legacy
+  // "All" sentinel and keep the rest as-is.
+  function normalizePaths(paths) {
+    return paths.filter((p) => p !== '')
+  }
+
+  // A path is considered selected if it (or any ancestor) is in the set.
+  function isPathSelected(p, selectedSet) {
+    if (selectedSet.has(p)) return true
+    const parts = p.split('/').filter(Boolean)
+    let acc = ''
+    for (let i = 0; i < parts.length - 1; i++) {
+      acc = acc ? `${acc}/${parts[i]}` : parts[i]
+      if (selectedSet.has(acc)) return true
+    }
     return false
   }
 
-  function getIndeterminatePaths(node, selectedPaths, result = new Set()) {
-    const key = node.path !== undefined ? node.path : node.name
-    const leafPaths = getLeafPaths(node)
-
-    if (leafPaths.length > 0) {
-      const selectedCount = leafPaths.filter((p) => isLeafPathSelected(p, selectedPaths)).length
-      if (selectedCount > 0 && selectedCount < leafPaths.length) {
-        result.add(key)
-      }
-    }
-
-    if (node.children) {
-      for (const child of node.children) {
-        getIndeterminatePaths(child, selectedPaths, result)
-      }
-    }
-
-    return result
-  }
-
-  // Normalize paths: expand root selection '' into all leaf paths on load
-  function normalizePaths(paths, tree) {
-    const nodeMap = buildNodeMap(tree)
-    return paths
-      .map((p) => {
-        if (p === '') {
-          const root = nodeMap.get('') || tree
-          return getLeafPaths(root)
-        }
-        if (!nodeMap.has(p)) return p
-        const node = nodeMap.get(p)
-        if (node.children && node.children.length > 0) {
-          return getLeafPaths(node)
-        }
-        return p
-      })
-      .flat()
-  }
-
-  // Compress selection to root: return [""] when all leaves are selected
+  // Compress the selection to the minimal set the backend needs.
+  // A node that is selected (or whose all loaded children are selected) is
+  // emitted as its own path (e.g. checking a year, or all its events, yields
+  // the year); a partially-selected node emits its checked children.
   function compressPaths(paths, tree) {
     if (!tree) return paths
     if (paths.length === 0) return []
-
-    const nodeMap = buildNodeMap(tree)
-    const allLeafPaths = getLeafPaths(tree)
     const selectedSet = new Set(paths)
-
-    if (allLeafPaths.length > 0 && allLeafPaths.every((p) => selectedSet.has(p))) {
-      return ['']
-    }
-
     const result = []
-    const yearSelected = new Set()
-    const eventGroups = new Map()
 
-    for (const p of paths) {
-      if (p === '') {
-        const root = nodeMap.get('') || tree
-        return getLeafPaths(root)
+    function walk(node) {
+      const key = node.path !== undefined ? node.path : node.name
+      if (selectedSet.has(key)) {
+        result.push(key)
+        return
       }
-      const parts = p.split('/').filter(Boolean)
-      if (parts.length === 1) {
-        yearSelected.add(parts[0])
-      } else if (parts.length >= 2) {
-        const year = parts[0]
-        if (!eventGroups.has(year)) eventGroups.set(year, new Set())
-        eventGroups.get(year).add(p)
+      const children = node.children || []
+      if (children.length === 0) return
+      const leaves = getLeafPaths(node)
+      if (leaves.length > 0 && leaves.every((p) => isPathSelected(p, selectedSet))) {
+        // All children selected: emit the parent. The root ("") means "all",
+        // which is represented by an empty selection.
+        if (key !== '') result.push(key)
+        return
       }
-    }
-
-    for (const year of yearSelected) {
-      result.push(year)
-    }
-
-    for (const [year, selectedEvents] of eventGroups) {
-      if (yearSelected.has(year)) continue
-      const yearNode = nodeMap.get(year)
-      if (!yearNode) continue
-      const allEvents = getLeafPaths(yearNode)
-      const allSelected = allEvents.length > 0 && allEvents.every((e) => selectedEvents.has(e))
-      if (allSelected) {
-        result.push(year)
-      } else {
-        result.push(...selectedEvents)
+      const before = result.length
+      for (const child of children) {
+        walk(child)
+      }
+      if (result.length === before) {
+        // No loaded child matched: forward any selected descendant paths.
+        for (const p of selectedSet) {
+          if (p !== key && p.startsWith(key + '/')) result.push(p)
+        }
       }
     }
 
+    walk(tree)
     return result
+  }
+
+  // Ensure a selected path (e.g. from preSelectedFolder) is visible: load its
+  // ancestor chain on demand and expand it so the checkbox is shown.
+  async function revealPath(targetPath) {
+    if (!props.tree || !targetPath) return
+    const parts = targetPath.split('/').filter(Boolean)
+    // Top-level (year) selections are shown via the checkbox without forcing
+    // expansion; only deeper paths (e.g. preSelectedFolder events) are revealed.
+    if (parts.length <= 1) return
+    let current = props.tree
+    let accumulated = ''
+    for (let i = 0; i < parts.length; i++) {
+      const seg = parts[i]
+      accumulated = accumulated ? `${accumulated}/${seg}` : seg
+      let child = (current.children || []).find(
+        (c) => (c.path !== undefined ? c.path : c.name) === accumulated,
+      )
+      if (!child && current.hasChildren && !current.loaded) {
+        current = await attachChildren(current)
+        child = (current.children || []).find(
+          (c) => (c.path !== undefined ? c.path : c.name) === accumulated,
+        )
+      }
+      if (!child) return
+      expandedPaths.value[accumulated] = true
+      current = child
+    }
   }
 
   watch(
     () => [props.tree, props.modelValue],
     ([tree, modelValue]) => {
-      if (tree) {
-        selectedPaths.value = normalizePaths([...modelValue], tree)
-        const indeterminatePaths = getIndeterminatePaths(tree, selectedPaths.value)
-        for (const path of indeterminatePaths) {
-          expandedPaths.value[path] = true
-        }
+      if (!tree) return
+      selectedPaths.value = normalizePaths([...modelValue])
+      for (const p of selectedPaths.value) {
+        revealPath(p)
       }
     },
     { immediate: true },
@@ -166,27 +180,52 @@
 
   function handleToggle(path) {
     expandedPaths.value[path] = !expandedPaths.value[path]
+    if (expandedPaths.value[path]) {
+      const node = buildNodeMap(props.tree).get(path)
+      if (node && node.hasChildren && !node.loaded) {
+        attachChildren(node).catch((err) => console.error('Failed to load folders', err))
+      }
+    }
   }
 
-  // Handle checkbox change: update selection then compress paths to root
+  // Nearest checked ancestor of a path (excluding the path itself).
+  function findCheckedAncestor(nodePath, selectedSet) {
+    const parts = nodePath.split('/').filter(Boolean)
+    for (let i = parts.length - 1; i >= 1; i--) {
+      const acc = parts.slice(0, i).join('/')
+      if (selectedSet.has(acc)) return acc
+    }
+    return null
+  }
+
+  // Handle checkbox change. Checking a node selects the node itself (not its
+  // loaded children), so checking a year is always the year path. Unchecking a
+  // node that is covered by a checked ancestor explodes the ancestor: removes
+  // it and adds all other loaded siblings, turning it indeterminate.
   function handleCheck(payload) {
-    const { checked, leafPaths } = payload
+    const { checked, node } = payload
     const next = new Set(selectedPaths.value)
+    const nodeKey = node.path !== undefined ? node.path : node.name
 
     if (checked) {
-      leafPaths.forEach((p) => next.add(p))
+      next.add(nodeKey)
     } else {
-      leafPaths.forEach((p) => next.delete(p))
+      const ancestor = findCheckedAncestor(nodeKey, next)
+      if (ancestor) {
+        next.delete(ancestor)
+        const map = buildNodeMap(props.tree)
+        const ancestorNode = map.get(ancestor)
+        if (ancestorNode) {
+          const siblingLeaves = getLeafPaths(ancestorNode).filter(
+            (p) => p !== nodeKey && !p.startsWith(nodeKey + '/'),
+          )
+          siblingLeaves.forEach((p) => next.add(p))
+        }
+      }
+      next.delete(nodeKey)
     }
 
     selectedPaths.value = Array.from(next)
     emit('update:modelValue', compressPaths(selectedPaths.value, props.tree))
-
-    const indeterminatePaths = getIndeterminatePaths(props.tree, selectedPaths.value)
-    for (const path of indeterminatePaths) {
-      expandedPaths.value[path] = true
-    }
   }
 </script>
-
-

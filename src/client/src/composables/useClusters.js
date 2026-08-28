@@ -9,9 +9,11 @@ export function useClusters(tokenRef = null) {
   const clusters = ref([])
   const currentClusterId = ref(null)
   const isLoading = ref(false)
+  let loadGeneration = 0
 
   // Load clusters
   const loadClusters = async () => {
+    const currentGeneration = ++loadGeneration
     try {
       isLoading.value = true
 
@@ -52,13 +54,21 @@ export function useClusters(tokenRef = null) {
         Array.isArray(clustersData) ? clustersData.length : 'not an array',
       )
 
-      if (Array.isArray(clustersData)) {
+      if (currentGeneration === loadGeneration && Array.isArray(clustersData)) {
         clusters.value = clustersData
+
+        const existingIds = new Set(clustersData.map((c) => c.id))
+        const staleClusters = urlFilters.filters.clusters.filter((id) => !existingIds.has(id))
+        for (const clusterId of staleClusters) {
+          urlFilters.toggleFilter('clusters', clusterId, false)
+        }
       }
     } catch (e) {
       console.error('Load clusters error:', e)
     } finally {
-      isLoading.value = false
+      if (currentGeneration === loadGeneration) {
+        isLoading.value = false
+      }
     }
   }
 
@@ -79,10 +89,15 @@ export function useClusters(tokenRef = null) {
     }
   }
 
+  const reload = async () => {
+    await loadClusters()
+  }
+
   return {
     clusters,
     currentClusterId,
     loadClusters,
+    reload,
     selectCluster,
   }
 }

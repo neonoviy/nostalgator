@@ -81,76 +81,57 @@ class EventService {
   async upsertEvent(eventData) {
     try {
       const normalizedPath = normalizePath(eventData.folderPath)
+      if (!normalizedPath) {
+        throw new Error('folderPath is required to create event')
+      }
 
-      let existingEvent = await this.prisma.event.findUnique({
+      const createData = {
+        folderPath: normalizedPath,
+        year: eventData.year || new Date(eventData.date).getFullYear(),
+        date: eventData.date,
+        title: eventData.title,
+        searchableTitle: eventData.title ? eventData.title.toLowerCase() : '',
+        mediaCount: eventData.mediaCount !== undefined ? eventData.mediaCount : 0,
+        lastScannedAt: eventData.lastScannedAt || new Date(),
+        allowedGroupIds:
+          eventData.allowedGroupIds && eventData.allowedGroupIds !== '[]'
+            ? eventData.allowedGroupIds
+            : null,
+        uploadedById: eventData.uploadedById || null,
+      }
+
+      // Atomic upsert keyed on folderPath. Concurrent callers (e.g. addDir handler
+      // and file-add handler firing for the same new folder) would otherwise race
+      // on findUnique + create and hit P2002; upsert makes the second caller update
+      // the already-created row instead of failing.
+      const updateData = {
+        date: eventData.date || undefined,
+        title: eventData.title || undefined,
+        searchableTitle: eventData.title ? eventData.title.toLowerCase() : undefined,
+        mediaCount: eventData.mediaCount !== undefined ? eventData.mediaCount : undefined,
+        lastScannedAt: eventData.lastScannedAt || undefined,
+        updatedAt: new Date(),
+      }
+
+      const result = await this.prisma.event.upsert({
         where: { folderPath: normalizedPath },
+        create: createData,
+        update: updateData,
       })
 
-      if (existingEvent) {
-        const updateData = {
-          date: eventData.date || existingEvent.date,
-          title: eventData.title || existingEvent.title,
-          searchableTitle: (eventData.title || existingEvent.title).toLowerCase(),
-          mediaCount:
-            eventData.mediaCount !== undefined ? eventData.mediaCount : existingEvent.mediaCount,
-          lastScannedAt: eventData.lastScannedAt || existingEvent.lastScannedAt,
-          updatedAt: new Date(),
-        }
+      // Create or update tag relations via TagService (many-to-many)
+      await this.tagService.updateEventTags(result.id, {
+        places: eventData.places || [],
+        eventTypes: eventData.eventTypes || [],
+        participants: eventData.participants || [],
+        tags: eventData.tags || [],
+      })
 
-        await this.prisma.event.update({
-          where: { id: existingEvent.id },
-          data: updateData,
-        })
+      const event = await this._getEventWithRelations({
+        where: { id: result.id },
+      })
 
-        // Update tags via TagService (many-to-many)
-        await this.tagService.updateEventTags(existingEvent.id, {
-          places: eventData.places || [],
-          eventTypes: eventData.eventTypes || [],
-          participants: eventData.participants || [],
-          tags: eventData.tags || [],
-        })
-
-        const event = await this._getEventWithRelations({
-          where: { id: existingEvent.id },
-        })
-
-        return this._transformEvent(event)
-      } else {
-        if (!normalizedPath) {
-          throw new Error('folderPath is required to create event')
-        }
-
-        const createData = {
-          folderPath: normalizedPath,
-          year: eventData.year || new Date(eventData.date).getFullYear(),
-          date: eventData.date,
-          title: eventData.title,
-          searchableTitle: eventData.title ? eventData.title.toLowerCase() : '',
-          mediaCount: eventData.mediaCount,
-          lastScannedAt: eventData.lastScannedAt || new Date(),
-          allowedGroupIds:
-            eventData.allowedGroupIds && eventData.allowedGroupIds !== '[]'
-              ? eventData.allowedGroupIds
-              : null,
-          uploadedById: eventData.uploadedById || null,
-        }
-
-        const newEvent = await this.prisma.event.create({ data: createData })
-
-        // Create tag relations via TagService
-        await this.tagService.updateEventTags(newEvent.id, {
-          places: eventData.places || [],
-          eventTypes: eventData.eventTypes || [],
-          participants: eventData.participants || [],
-          tags: eventData.tags || [],
-        })
-
-        const event = await this._getEventWithRelations({
-          where: { id: newEvent.id },
-        })
-
-        return this._transformEvent(event)
-      }
+      return this._transformEvent(event)
     } catch (error) {
       logger.error('Event upsert failed', error)
       return null
@@ -1050,10 +1031,11 @@ class EventService {
           // Step 1: collect data from disk (EXIF, hash, size)
       const batchData = await Promise.all(
         batch.map(async (file) => {
-          const [info, exif] = await Promise.all([
-            getMediaInfo(file.fullPath),
-            extractExifData(file.fullPath),
-          ])
+          const info = await getMediaInfo(file.fullPath)
+          const exif = await extractExifData(file.fullPath, {
+            birthtime: info.birthtime,
+            mtime: info.mtime,
+          })
 
           let fileHash = null
           try {

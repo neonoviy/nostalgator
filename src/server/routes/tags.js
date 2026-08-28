@@ -91,42 +91,42 @@ module.exports = (app, ctx) => {
  * @openapi
  * /api/tags:
  *   get:
-  *     summary: Get all tags
+ *     summary: Get all tags
  *     tags: [Tags]
  *     parameters:
  *       - in: query
  *         name: years
  *         schema: { type: string }
-  *         description: JSON array for filtering
+ *         description: JSON array for filtering
  *       - in: query
  *         name: places
  *         schema: { type: string }
  *     responses:
  *       200:
-  *         description: List of tags
+ *         description: List of tags
  */
 
 /**
  * @openapi
  * /api/years/counts:
  *   get:
-  *     summary: Event counts by year
+ *     summary: Event counts by year
  *     tags: [Tags]
  *     parameters:
  *       - in: query
  *         name: places
  *         schema: { type: string }
-  *         description: JSON filter array
+ *         description: JSON filter array
  *     responses:
  *       200:
-  *         description: Counts by year
+ *         description: Counts by year
  */
 
 /**
  * @openapi
  * /api/tags/{type}/{id}/rename:
  *   put:
-  *     summary: Rename tag
+ *     summary: Rename tag
  *     tags: [Tags]
  *     security:
  *       - BearerAuth: []
@@ -149,14 +149,14 @@ module.exports = (app, ctx) => {
  *               name: { type: string }
  *     responses:
  *       200:
-  *         description: Tag renamed
+ *         description: Tag renamed
  */
 
 /**
  * @openapi
  * /api/tags/{type}/{id}:
  *   delete:
-  *     summary: Delete tag
+ *     summary: Delete tag
  *     tags: [Tags]
  *     security:
  *       - BearerAuth: []
@@ -171,11 +171,27 @@ module.exports = (app, ctx) => {
  *         schema: { type: integer }
  *     responses:
  *       200:
-  *         description: Tag deleted
+ *         description: Tag deleted
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 eventsAffected: { type: integer }
+ */
+
+/**
+ * @openapi
+ * /api/years:
+ *   get:
+ *     summary: Get all available years
+ *     tags: [Tags]
+ *     responses:
+ *       200:
+ *         description: Array of years
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { type: integer }
  */

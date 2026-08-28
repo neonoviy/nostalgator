@@ -42,11 +42,8 @@
 
 <script setup>
   import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-  import { useI18n } from 'vue-i18n'
   import { calculatePosition } from '@/composables/useVueSelectPosition'
   import FolderTree from './FolderTree.vue'
-
-  const { t } = useI18n()
 
   const props = defineProps({
     modelValue: {
@@ -74,9 +71,7 @@
 
   const selectedLabel = computed(() => {
     if (selectedCount.value !== 1) return ''
-    const path = props.modelValue[0]
-    if (path === '') return t('common.all')
-    return path
+    return props.modelValue[0]
   })
 
   function toggle() {
@@ -88,6 +83,15 @@
   }
 
   function handleKeydown(event) {
+    const target = event.target
+    const isButton =
+      buttonRef.value && (target === buttonRef.value || buttonRef.value.contains(target))
+    const isPanel = panelRef.value && panelRef.value.contains(target)
+    const isInput = target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+
+    if (!isButton && !isPanel) return
+    if (isInput) return
+
     if (event.key === 'Escape') {
       close()
       return
@@ -145,5 +149,3 @@
     window.removeEventListener('scroll', handleScroll, true)
   })
 </script>
-
-

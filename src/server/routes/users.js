@@ -56,6 +56,7 @@ module.exports = (app, ctx) => {
    *                 type: array
    *                 items:
    *                   type: integer
+   *               canUpload: { type: boolean, description: Allow file uploads }
    *     responses:
    *       200: { description: User created }
    *       400: { description: Validation error }
@@ -108,6 +109,7 @@ module.exports = (app, ctx) => {
    *               username: { type: string }
    *               role: { type: string, enum: [user, admin] }
    *               password: { type: string }
+   *               canUpload: { type: boolean, description: Allow file uploads }
    *               groupIds:
    *                 type: array
    *                 items:

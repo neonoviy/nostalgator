@@ -1,20 +1,25 @@
 import { reactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+let sharedFilters = null
+
 export function useUrlFilters() {
   const route = useRoute()
   const router = useRouter()
 
-  // Reactive filter structure
-  const filters = reactive({
-    years: [],
-    eventTypes: [],
-    places: [],
-    participants: [],
-    tags: [],
-    clusters: [],
-    search: '',
-  })
+  if (!sharedFilters) {
+    sharedFilters = reactive({
+      years: [],
+      eventTypes: [],
+      places: [],
+      participants: [],
+      tags: [],
+      clusters: [],
+      search: '',
+    })
+  }
+
+  const filters = sharedFilters
 
   // Extract filters from URL
   const parseCsv = (value) => {
@@ -51,7 +56,7 @@ export function useUrlFilters() {
         filters.tags = parseCsv(route.query.tags)
       }
       if (route.query.clusters) {
-        filters.clusters = parseCsv(route.query.clusters)
+        filters.clusters = parseCsv(route.query.clusters).map(Number).filter((n) => Number.isInteger(n) && n > 0)
       }
       if (route.query.search) {
         try {
@@ -189,6 +194,8 @@ export function useUrlFilters() {
           .split(',')
           .map((v) => v.trim())
           .filter(Boolean)
+          .map(Number)
+          .filter((n) => Number.isInteger(n) && n > 0)
       } catch {
         result.clusters = []
       }

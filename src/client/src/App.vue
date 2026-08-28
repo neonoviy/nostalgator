@@ -196,6 +196,8 @@
   const isProgrammaticScroll = ref(false)
   const showScrollTop = ref(false)
 
+  const pendingNotificationShown = useStorage('pending-notification-shown', false, window.sessionStorage)
+
   // Ref for accessing map methods
   const mapRef = ref(null)
 
@@ -241,6 +243,9 @@
     },
     closeFancybox: () => {
       closeFancybox()
+    },
+    reloadClusters: () => {
+      mapRef.value?.reloadClusters?.()
     },
   })
 
@@ -345,6 +350,8 @@
       if (e.type === 'wheel') {
         const sidebar = document.querySelector('.fancybox__sidebar')
         if (sidebar && sidebar.contains(e.target)) return
+        const dropdown = e.target.closest('.vs__dropdown-menu')
+        if (dropdown) return
         e.preventDefault()
         e.stopPropagation()
       }
@@ -993,26 +1000,22 @@
   // WebSocket for event updates
   // ============================================
 
-  onMounted(() => {
-    // Handle watcher cycle completion
-    window.addEventListener('ws:watcher:cycle-complete', () => {
-      addNotification('info', t('app.newFilesDetected'), {
-        id: 'watcher-update',
-        actionLabel: t('app.refreshTimeline'),
-        actionHandler: async () => {
-          await Promise.all([eventsState.loadTagCounts(), eventsState.loadYears()])
-          await loadEvents(false)
-        },
-        persistent: true,
-      })
-    })
+  const onEventsChanged = () => {
+    loadEvents(false)
+    eventsState.loadTagCounts()
+    clustersState.reload()
+  }
 
+  onMounted(() => {
     window.addEventListener('fancybox:opened', openFancybox)
     window.addEventListener('fancybox:closed', closeFancybox)
     window.addEventListener('fancybox:slideChanged', onSlideChanged)
     window.addEventListener('fancybox:opened', startOverlayWatch)
     window.addEventListener('fancybox:closed', stopOverlayWatch)
     window.addEventListener('media-deleted', () => loadEvents(false))
+    window.addEventListener('ws:events-changed', onEventsChanged)
+
+    window.addEventListener('ws:scan:pending-folders', onPendingFoldersEvent)
 
     const mainContent = document.querySelector('.main-content')
     if (mainContent) {
@@ -1037,6 +1040,43 @@
     await Promise.all([eventsState.loadTagCounts(), eventsState.loadYears()])
     await loadEvents(false)
   })
+
+  // Notify admin about folders awaiting scan (new events detected on disk)
+  const notifyPendingEvents = async () => {
+    if (!authState.isAdmin.value) return
+    if (pendingNotificationShown.value) return
+    await scanState.loadPendingFolders()
+    if (scanState.pendingFolders.value.length === 0) return
+    pendingNotificationShown.value = true
+    addNotification('info', t('app.newEventsDetected'), {
+      id: 'pending-events',
+      persistent: true,
+      actionLabel: t('app.openScan'),
+      actionHandler: () => {
+        settingsModal.openSettingsModal('scan', {
+          folders: [...scanState.pendingFolders.value],
+        })
+      },
+    })
+  }
+
+  // Live update from server when pending folders change (watcher detects changes)
+  const onPendingFoldersEvent = (event) => {
+    const folders = (event.detail && event.detail.folders) || []
+    scanState.pendingFolders.value = folders
+    if (authState.isAdmin.value && folders.length > 0) {
+      pendingNotificationShown.value = false
+      addNotification('info', t('app.newEventsDetected'), {
+        id: 'pending-events',
+        persistent: true,
+        actionLabel: t('app.openScan'),
+        actionHandler: () => {
+          settingsModal.openSettingsModal('scan', { folders: [...folders] })
+        },
+      })
+    }
+  }
+
 
   // ============================================
   // Lifecycle
@@ -1117,6 +1157,9 @@
         } else {
           settingsModal.openSettingsModal('scan')
         }
+      } else if (authState.isAdmin.value) {
+        // Existing library: notify admin about folders awaiting scan
+        notifyPendingEvents()
       }
     } catch (e) {
       console.error('Failed to check DB events for first-launch flow:', e)
@@ -1128,12 +1171,15 @@
     if (!val) firstLaunchLoginHint.value = false
   })
 
-  // After successful login (if DB is empty and flow not completed yet) — show scan
+  // After successful login — notify admin about folders awaiting scan
   watch(
     () => user.value?.id,
     (newId, oldId) => {
       if (newId && !oldId && !dbHasEvents.value && !firstLaunchFlowDone.value) {
         settingsModal.openSettingsModal('scan')
+      }
+      if (newId && !oldId && dbHasEvents.value && authState.isAdmin.value) {
+        notifyPendingEvents()
       }
     },
   )
@@ -1160,6 +1206,8 @@
     window.removeEventListener('fancybox:opened', startOverlayWatch)
     window.removeEventListener('fancybox:closed', stopOverlayWatch)
     window.removeEventListener('media-deleted', () => loadEvents(false))
+    window.removeEventListener('ws:events-changed', onEventsChanged)
+    window.removeEventListener('ws:scan:pending-folders', onPendingFoldersEvent)
     window.removeEventListener('keydown', handleHomeKey)
 
     const mainContent = document.querySelector('.main-content')

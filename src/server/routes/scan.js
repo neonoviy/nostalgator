@@ -6,21 +6,31 @@ const logger = require('../utils/logger')
 const fs = require('fs').promises
 const path = require('path')
 
-async function buildFolderTree(dirPath, relativePath = '') {
+// Returns immediate subdirectories only (one level), each flagged with
+// hasChildren so the UI can render an expand caret without loading deeper.
+async function getImmediateChildren(dirPath, relativePath = '') {
   let entries
   try {
     entries = await fs.readdir(dirPath, { withFileTypes: true })
   } catch (_err) {
     return []
   }
-  const dirs = entries.filter((e) => e.isDirectory()).sort((a, b) => b.name.localeCompare(a.name))
+  const dirs = entries
+    .filter((e) => e.isDirectory())
+    .sort((a, b) => b.name.localeCompare(a.name))
   const result = []
   for (const d of dirs) {
     const name = d.name
     const childRel = relativePath ? `${relativePath}/${name}` : name
     const fullPath = path.join(dirPath, name)
-    const children = await buildFolderTree(fullPath, childRel)
-    result.push({ name, path: childRel, children })
+    let hasChildren
+    try {
+      const sub = await fs.readdir(fullPath, { withFileTypes: true })
+      hasChildren = sub.some((s) => s.isDirectory())
+    } catch (err) {
+      hasChildren = false
+    }
+    result.push({ name, path: childRel, hasChildren, children: [] })
   }
   return result
 }
@@ -54,27 +64,42 @@ module.exports = (app, ctx) => {
         logger.scan(message)
       }
 
-      ;(async () => {
-        try {
-          await ctx.scanService.scanOriginalsFolder('full', addLog, folders, {
-            forceFaces,
-            forcePlaces,
-            forceThumbs,
-          })
-        } catch (error) {
-          addLog(`❌ Error: ${error.message}`)
-        } finally {
-          ctx.isScanning = false
-          if (ctx.websocketService) ctx.websocketService.notifyScanProcessChanged('scanning', false)
-          ctx.scanAbortController = null
-        }
-      })()
+       ;(async () => {
+         try {
+           await ctx.scanService.scanOriginalsFolder('full', addLog, folders, {
+             forceFaces,
+             forcePlaces,
+             forceThumbs,
+           })
+         } catch (error) {
+           addLog(`❌ Error: ${error.message}`)
+         } finally {
+           // Folders included in this scan are no longer "pending".
+           ctx.scanService.removePendingFolders(
+             folders.length ? folders : ctx.scanService.getPendingFolders(),
+           )
+           ctx.isScanning = false
+           if (ctx.websocketService) ctx.websocketService.notifyScanProcessChanged('scanning', false)
+           ctx.scanAbortController = null
+         }
+       })()
 
       res.success({ status: 'started', message: 'Scan started' })
     } catch (error) {
       logger.error('Full scan failed', error)
       ctx.isScanning = false
       if (ctx.websocketService) ctx.websocketService.notifyScanProcessChanged('scanning', false)
+      res.error(ERROR_CODES.INTERNAL_ERROR, error.message)
+    }
+  })
+
+  // GET /api/scan/pending
+  // Returns relative paths (year/event) present on disk but not yet scanned.
+  app.get('/api/scan/pending', ctx.checkServicesReady, ctx.requireAdmin, async (req, res) => {
+    try {
+      res.success({ folders: ctx.scanService.getPendingFolders() })
+    } catch (error) {
+      logger.error('Failed to get pending folders', error)
       res.error(ERROR_CODES.INTERNAL_ERROR, error.message)
     }
   })
@@ -127,14 +152,30 @@ module.exports = (app, ctx) => {
   })
 
   // GET /api/scan/folders
+  // Returns the root node (years) when no ?path is given, or the immediate
+  // children of ?path=<relative> for lazy loading. Each child carries
+  // hasChildren so the UI can show an expand caret without recursive reads.
   app.get('/api/scan/folders', ctx.checkServicesReady, ctx.requireAdmin, async (req, res) => {
     try {
       const rootPath = ctx.ORIGINALS_PATH
-      const tree = await buildFolderTree(rootPath, '')
+      const relPath =
+        typeof req.query.path === 'string' ? req.query.path.replace(/^\/+/, '') : ''
+      if (relPath && (relPath.includes('..') || path.isAbsolute(relPath))) {
+        return res.error(ERROR_CODES.VALIDATION_ERROR, 'Invalid folder path', 400)
+      }
+      const targetPath = relPath ? path.join(rootPath, relPath) : rootPath
+      const resolvedRoot = path.resolve(rootPath)
+      const resolvedTarget = path.resolve(targetPath)
+      const rel = path.relative(resolvedRoot, resolvedTarget)
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        return res.error(ERROR_CODES.VALIDATION_ERROR, 'Invalid folder path', 400)
+      }
+      const children = await getImmediateChildren(targetPath, relPath)
       res.success({
-        name: path.basename(rootPath),
-        path: '',
-        children: tree,
+        name: relPath ? path.basename(targetPath) : path.basename(rootPath),
+        path: relPath,
+        hasChildren: children.length > 0,
+        children,
       })
     } catch (error) {
       logger.error('Failed to get folder tree', error)
@@ -188,7 +229,7 @@ module.exports = (app, ctx) => {
  * @openapi
  * /api/scan/full:
  *   post:
-  *     summary: Start full scan
+ *     summary: Start full scan
  *     tags: [Scanning]
  *     security:
  *       - BearerAuth: []
@@ -203,38 +244,47 @@ module.exports = (app, ctx) => {
  *                 type: array
  *                 items:
  *                   type: string
-  *                 description: Relative paths of selected folders (year or year/event)
+ *                 description: Relative paths of selected folders (year or year/event)
+ *               forceFaces:
+ *                 type: boolean
+ *                 description: Force re-scan of faces
+ *               forcePlaces:
+ *                 type: boolean
+ *                 description: Force re-scan of places
+ *               forceThumbs:
+ *                 type: boolean
+ *                 description: Force re-generation of thumbnails
  *     responses:
  *       200:
-  *         description: Scan started
+ *         description: Scan started
  *       401:
-  *         description: Authentication required
+ *         description: Authentication required
  *       403:
-  *         description: Admin role required
+ *         description: Admin role required
  *       409:
-  *         description: Scan already in progress
+ *         description: Scan already in progress
  *       500:
-  *         description: Scan error
+ *         description: Scan error
  */
 
 /**
  * @openapi
  * /api/scan/cancel:
  *   post:
-  *     summary: Cancel scan
+ *     summary: Cancel scan
  *     tags: [Scanning]
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
-  *         description: Scan cancelled
+ *         description: Scan cancelled
  */
 
 /**
  * @openapi
  * /api/scan/logs:
  *   get:
-  *     summary: Get scan logs
+ *     summary: Get scan logs
  *     tags: [Scanning]
  *     security:
  *       - BearerAuth: []
@@ -242,36 +292,36 @@ module.exports = (app, ctx) => {
  *       - in: query
  *         name: since
  *         schema: { type: integer }
-  *         description: Timestamp of the last received log
+ *         description: Timestamp of the last received log
  *     responses:
  *       200:
-  *         description: Scan logs
+ *         description: Scan logs
  */
 
 /**
  * @openapi
  * /api/scan/logs/clear:
  *   post:
-  *     summary: Clear scan logs
+ *     summary: Clear scan logs
  *     tags: [Scanning]
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
-  *         description: Logs cleared
+ *         description: Logs cleared
  */
 
 /**
  * @openapi
  * /api/scan/stats:
  *   get:
-  *     summary: Get aggregated database statistics
+ *     summary: Get aggregated database statistics
  *     tags: [Scanning]
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
-  *         description: Statistics
+ *         description: Statistics
  *         content:
  *           application/json:
  *             schema:
@@ -289,4 +339,42 @@ module.exports = (app, ctx) => {
  *                   type: integer
  *                 clusters:
  *                   type: integer
+ */
+
+/**
+ * @openapi
+ * /api/scan/folders:
+ *   get:
+ *     summary: Get one level of the originals folder tree (admin only)
+ *     tags: [Scanning]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: path
+ *         schema: { type: string }
+ *         description: Relative folder path to list children of (omit for root/years)
+ *     responses:
+ *       200:
+ *         description: Folder node with immediate children
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 name: { type: string, description: Folder name }
+ *                 path: { type: string }
+ *                 hasChildren: { type: boolean, description: Whether the folder has subfolders }
+ *                 children:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name: { type: string }
+ *                       path: { type: string }
+ *                       hasChildren: { type: boolean }
+ *                       children:
+ *                         type: array
+ *                         items:
+ *                           type: object
  */

@@ -124,10 +124,80 @@ function _parseGpsValue(value, ref) {
   return isNaN(num) ? null : num
 }
 
+// Parse capture date from EXIF DateTimeOriginal or filename
+// ExifDateTime from exiftool-vendored has raw .year/.month/.day/.hour/.minute/.second
+// We extract those components and store as UTC (matching the EXIF local time in filename).
+function _parseExifDateAsUtc(dateField) {
+  if (dateField == null) return null
+
+  // ExifDateTime object from exiftool-vendored: has .year, .month, etc.
+  if (typeof dateField === 'object' && dateField.year != null && dateField.month != null) {
+    const d = new Date(
+      Date.UTC(
+        parseInt(dateField.year),
+        parseInt(dateField.month) - 1,
+        parseInt(dateField.day) || 1,
+        parseInt(dateField.hour) || 0,
+        parseInt(dateField.minute) || 0,
+        parseInt(dateField.second) || 0,
+        dateField.millisecond != null ? parseInt(dateField.millisecond) : 0,
+      ),
+    )
+    return isNaN(d.getTime()) ? null : d
+  }
+
+  // Regular Date — use as-is
+  if (dateField instanceof Date) return dateField
+
+  // String — try parsing EXIF format "YYYY:MM:DD HH:MM:SS"
+  if (typeof dateField === 'string') {
+    const match = dateField.match(/^(\d{4}):(\d{2}):(\d{2})[ ](\d{2}):(\d{2}):(\d{2})(?:[.,](\d+))?(?:Z|[+-]\d{2}:?\d{2})?$/)
+    if (match) {
+      const d = new Date(
+        Date.UTC(
+          parseInt(match[1]),
+          parseInt(match[2]) - 1,
+          parseInt(match[3]),
+          parseInt(match[4]),
+          parseInt(match[5]),
+          parseInt(match[6]),
+          match[7] ? parseInt(match[7].slice(0, 3).padEnd(3, '0')) : 0,
+        ),
+      )
+      return isNaN(d.getTime()) ? null : d
+    }
+  }
+
+  return null
+}
+
+// Parse capture date from filename (Samsung/Canon/Sony/Nikon style)
+// Patterns: IMG_YYYYMMDD_HHMMSS, DSC_YYYYMMDD_HHMMSS, etc.
+// Uses Date.UTC so the ISO string matches the filename time.
+function _parseDateFromFilename(filename) {
+  const name = path.basename(filename)
+  const match = name.match(/_(\d{4})(\d{2})(\d{2})[_\.](\d{2})(\d{2})(\d{2})/)
+  if (!match) return null
+
+  const [, year, month, day, hour, minute, second] = match
+  const date = new Date(
+    Date.UTC(
+      parseInt(year),
+      parseInt(month) - 1,
+      parseInt(day),
+      parseInt(hour),
+      parseInt(minute),
+      parseInt(second),
+    ),
+  )
+
+  return isNaN(date.getTime()) ? null : date
+}
+
 // Extract EXIF data for Media record
 // Returns: { capturedAt, latitude, longitude, width, height, duration }
 // Skip videos — they don't have DateTimeOriginal in EXIF
-async function extractExifData(filePath) {
+async function extractExifData(filePath, stat) {
   const ext = path.extname(filePath).toLowerCase()
   const isVideo = VIDEO_EXTENSIONS.includes(ext)
 
@@ -141,8 +211,21 @@ async function extractExifData(filePath) {
       ? tags.CreateDate || tags.DateTimeOriginal || tags.DateTimeDigitized
       : tags.DateTimeOriginal || tags.CreateDate || tags.DateTimeDigitized
     if (dateField) {
-      capturedAt = dateField instanceof Date ? dateField : new Date(dateField)
-      if (isNaN(capturedAt.getTime())) capturedAt = null
+      // ExifDateTime from exiftool-vendored has raw .year/.month/.day/.hour/.minute/.second
+      // components (the camera's local time). We store them as UTC so capturedAt
+      // matches the EXIF local time and the filename, without timezone conversion.
+      capturedAt = _parseExifDateAsUtc(dateField)
+    }
+
+    if (!capturedAt && stat) {
+      const fsDate = stat.birthtime || stat.mtime
+      if (fsDate && !isNaN(new Date(fsDate).getTime())) {
+        capturedAt = new Date(fsDate)
+      }
+    }
+
+    if (!capturedAt) {
+      capturedAt = _parseDateFromFilename(path.basename(filePath))
     }
 
     // GPS coordinates
@@ -203,6 +286,8 @@ async function getMediaInfo(filePath) {
   return {
     filename: path.basename(filePath),
     size: stat.size,
+    birthtime: stat.birthtime,
+    mtime: stat.mtime,
     extension: ext,
     mimeType: getMimeType(filePath),
     isVideo: VIDEO_EXTENSIONS.includes(ext),

@@ -1,6 +1,7 @@
 /**
  * ExifService — reading EXIF data from files
  */
+const path = require('path')
 const logger = require('../utils/logger')
 const { exiftool } = require('exiftool-vendored')
 const fs = require('fs').promises
@@ -85,6 +86,17 @@ class ExifService {
   _formatCamera(make, model) {
     const parts = [make, model].filter(Boolean)
     return parts.join(' ') || null
+  }
+
+  async writeExif(filePath, tags) {
+    try {
+      const normalizedPath = path.normalize(filePath)
+      await exiftool.write(normalizedPath, tags)
+      return true
+    } catch (error) {
+      logger.error(`EXIF write failed for ${filePath}: ${error.message}`)
+      throw error
+    }
   }
 }
 

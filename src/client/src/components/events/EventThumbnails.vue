@@ -252,10 +252,12 @@
       loadThumbnails()
     }
     window.addEventListener('media-deleted', onMediaDeleted)
+    window.addEventListener('ws:events-changed', loadThumbnails)
   })
 
   onBeforeUnmount(() => {
     window.removeEventListener('media-deleted', onMediaDeleted)
+    window.removeEventListener('ws:events-changed', loadThumbnails)
   })
 
   const onMediaDeleted = (e) => {

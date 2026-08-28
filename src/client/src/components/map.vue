@@ -12,8 +12,6 @@
 </template>
 
 <script setup>
-  console.log('ClustersView component loaded')
-
   /* global maplibregl, MapboxDraw */
   import {
     ref,
@@ -241,15 +239,21 @@
     return false
   }
 
-  const getPlaceNames = (cluster) => {
-    return (cluster.placeIds || [])
-      .map((pid) => eventsPlaces.value?.find((p) => p.id === pid)?.name)
-      .filter(Boolean)
-      .join(', ')
-  }
-
   const cssVar = (name, fallback) =>
     getComputedStyle(document.body).getPropertyValue(name).trim() || fallback
+
+  const formatCount = (n) => {
+    const num = Number(n) || 0
+    if (num >= 1000000) {
+      const m = num / 1000000
+      return m % 1 === 0 ? `${m}M` : `${m.toFixed(1).replace(/\.0$/, '')}M`
+    }
+    if (num >= 1000) {
+      const k = num / 1000
+      return k % 1 === 0 ? `${k}K` : `${k.toFixed(1).replace(/\.0$/, '')}K`
+    }
+    return String(num)
+  }
 
   const MAP_VISUALS = () => ({
     cluster: {
@@ -259,11 +263,14 @@
         borderColor: cssVar('--map-cluster-marker-border', '#ffffff'),
         borderRadius: '50%',
         fontSize: '8px',
-        textColor: cssVar('--map-cluster-marker-text', '#ffffff'),
+        textColor: cssVar('--primary', '#ffffff'),
         defaultColor: cssVar('--map-cluster-default', '#2196F3'),
         selectedColor: cssVar('--map-cluster-selected', '#4CAF50'),
         defaultOpacity: 0.3,
         selectedOpacity: 1.0,
+        maxOpacity: 1.0,
+        opacityFactor: 0.03,
+        defaultOpacityMultiplier: 0.3,
       },
       rectangle: {
         defaultColor: cssVar('--map-cluster-default', '#2196F3'),
@@ -307,7 +314,7 @@
     heatmap: {
       max: 18,
       radius: { zoom0: 2, zoom9: 50 },
-      opacity: { zoom7: 1, zoom9: 1 },
+      opacity: { zoom7: 1, zoom9: 0.3 },
       intensity: { zoom0: 1, zoom9: 3 },
     },
     cluster: {
@@ -360,11 +367,31 @@
     }
   }
 
-  const markerRefs = new Map()
-  const rectangleSources = new Set()
+  const setupVisibilityObserver = () => {
+    if (visibilityObserver) return
+    const container = mapContainer.value
+    if (!container || !window.IntersectionObserver) return
+
+    visibilityObserver = new IntersectionObserver(
+      (entries) => {
+        isMapVisible.value = entries[0]?.isIntersecting ?? false
+      },
+      { threshold: 0.1 },
+    )
+    visibilityObserver.observe(container)
+  }
+
+  const teardownVisibilityObserver = () => {
+    if (visibilityObserver) {
+      visibilityObserver.disconnect()
+      visibilityObserver = null
+    }
+  }
+
   let zoomHandler = null
-  let markerVisibilityHandler = null
-  let hoveredHighlightLayer = null
+  let rafId = null
+  let visibilityObserver = null
+  const isMapVisible = ref(false)
 
   let mapInstance = null
 
@@ -427,14 +454,14 @@
     })
     updatePlacesPolygons()
 
-    mapInstance.addSource('clusters-geojson', {
+    mapInstance.addSource('clusters-heatmap-raw', {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
     })
     mapInstance.addLayer({
       id: 'clusters-heatmap',
       type: 'heatmap',
-      source: 'clusters-geojson',
+      source: 'clusters-heatmap-raw',
       maxzoom: MAP_ZOOM.heatmap.max,
       paint: {
         'heatmap-weight': ['interpolate', ['linear'], ['get', 'count'], 0, 0, 50, 0.5, 100, 1],
@@ -484,6 +511,258 @@
         ],
       },
     })
+
+    mapInstance.addSource('clusters-geojson', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+      cluster: true,
+      clusterMaxZoom: 13,
+      clusterRadius: 30,
+      clusterProperties: {
+        sumCount: ['+', ['get', 'count']],
+      },
+    })
+
+    mapInstance.addLayer({
+      id: 'clusters-circle',
+      type: 'circle',
+      source: 'clusters-geojson',
+      filter: ['has', 'point_count'],
+      paint: {
+        'circle-color': [
+          'interpolate',
+          ['linear'],
+          ['get', 'sumCount'],
+          0,
+          cssVar('--map-cluster-low', '#2166AC'),
+          10,
+          cssVar('--map-cluster-mid', '#67A9CF'),
+          50,
+          cssVar('--map-cluster-high', '#EF8A62'),
+          100,
+          cssVar('--map-cluster-max', '#B2182B'),
+        ],
+        'circle-radius': ['step', ['get', 'sumCount'], 20, 10, 30, 50, 40],
+        'circle-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0, 13, 0.2],
+      },
+    })
+    mapInstance.addLayer({
+      id: 'clusters-count',
+      type: 'symbol',
+      source: 'clusters-geojson',
+      filter: ['has', 'point_count'],
+      layout: {
+        'text-field': ['get', 'point_count_abbreviated'],
+        'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+        'text-size': 12,
+      },
+      paint: {
+        'text-color': MAP_VISUALS().cluster.marker.textColor,
+      },
+    })
+    mapInstance.addLayer({
+      id: 'clusters-unclustered',
+      type: 'circle',
+      source: 'clusters-geojson',
+      filter: ['!', ['has', 'point_count']],
+      paint: {
+        'circle-color': [
+          'interpolate',
+          ['linear'],
+          ['get', 'count'],
+          0,
+          cssVar('--map-cluster-low', '#2166AC'),
+          10,
+          cssVar('--map-cluster-mid', '#67A9CF'),
+          50,
+          cssVar('--map-cluster-high', '#EF8A62'),
+          100,
+          cssVar('--map-cluster-max', '#B2182B'),
+        ],
+        'circle-radius': 6,
+        'circle-opacity': ['get', 'pointOpacity'],
+        'circle-stroke-width': 1,
+        'circle-stroke-color': '#ffffff',
+      },
+    })
+    mapInstance.addLayer({
+      id: 'clusters-unclustered-count',
+      type: 'symbol',
+      source: 'clusters-geojson',
+      filter: ['!', ['has', 'point_count']],
+      layout: {
+        'text-field': ['get', 'countLabel'],
+        'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+        'text-size': 10,
+      },
+      paint: {
+        'text-color': MAP_VISUALS().cluster.marker.textColor,
+      },
+    })
+
+    mapInstance.addSource('clusters-rectangles', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    })
+    mapInstance.addLayer({
+      id: 'clusters-rectangles-fill',
+      type: 'fill',
+      source: 'clusters-rectangles',
+      paint: {
+        'fill-color': [
+          'case',
+          ['==', ['get', 'selected'], true],
+          MAP_VISUALS().cluster.rectangle.selectedColor,
+          [
+            'interpolate',
+            ['linear'],
+            ['get', 'count'],
+            0,
+            cssVar('--map-cluster-low', '#2166AC'),
+            10,
+            cssVar('--map-cluster-mid', '#67A9CF'),
+            50,
+            cssVar('--map-cluster-high', '#EF8A62'),
+            100,
+            cssVar('--map-cluster-max', '#B2182B'),
+          ],
+        ],
+        'fill-opacity': ['get', 'fillOpacity'],
+      },
+    })
+    mapInstance.addLayer({
+      id: 'clusters-rectangles-stroke',
+      type: 'line',
+      source: 'clusters-rectangles',
+      paint: {
+        'line-color': [
+          'case',
+          ['==', ['get', 'selected'], true],
+          MAP_VISUALS().cluster.rectangle.selectedColor,
+          [
+            'interpolate',
+            ['linear'],
+            ['get', 'count'],
+            0,
+            cssVar('--map-cluster-low', '#2166AC'),
+            10,
+            cssVar('--map-cluster-mid', '#67A9CF'),
+            50,
+            cssVar('--map-cluster-high', '#EF8A62'),
+            100,
+            cssVar('--map-cluster-max', '#B2182B'),
+          ],
+        ],
+        'line-width': MAP_VISUALS().cluster.rectangle.strokeWidth,
+        'line-opacity': 0.5,
+      },
+    })
+
+    mapInstance.on('click', 'clusters-rectangles-fill', (e) => {
+      if (isDrawingMode.value) return
+      const features = mapInstance.queryRenderedFeatures(e.point, {
+        layers: ['clusters-rectangles-fill'],
+      })
+      if (features.length > 0) {
+        const clusterId = features[0].properties.clusterId
+        const currentlySelected = isClusterSelected({ id: clusterId })
+        skipFitMapOnClusterClick = true
+        urlFilters.toggleFilter('clusters', clusterId, !currentlySelected)
+      }
+    })
+
+    mapInstance.on('mouseenter', 'clusters-rectangles-fill', () => {
+      mapInstance.getCanvas().style.cursor = 'pointer'
+    })
+    mapInstance.on('mouseleave', 'clusters-rectangles-fill', () => {
+      mapInstance.getCanvas().style.cursor = ''
+    })
+
+    mapInstance.on('click', 'clusters-circle', (e) => {
+      if (isDrawingMode.value) return
+      const features = mapInstance.queryRenderedFeatures(e.point, {
+        layers: ['clusters-circle'],
+      })
+      if (features.length > 0) {
+        const clusterId = features[0].properties.clusterId
+        const currentlySelected = isClusterSelected({ id: clusterId })
+        skipFitMapOnClusterClick = true
+        urlFilters.toggleFilter('clusters', clusterId, !currentlySelected)
+      }
+    })
+
+    mapInstance.on('click', 'clusters-unclustered', (e) => {
+      if (isDrawingMode.value) return
+      const features = mapInstance.queryRenderedFeatures(e.point, {
+        layers: ['clusters-unclustered'],
+      })
+      if (features.length > 0) {
+        const clusterId = features[0].properties.clusterId
+        const currentlySelected = isClusterSelected({ id: clusterId })
+        skipFitMapOnClusterClick = true
+        urlFilters.toggleFilter('clusters', clusterId, !currentlySelected)
+      }
+    })
+
+    mapInstance.on('mouseenter', 'clusters-circle', () => {
+      mapInstance.getCanvas().style.cursor = 'pointer'
+    })
+    mapInstance.on('mouseleave', 'clusters-circle', () => {
+      mapInstance.getCanvas().style.cursor = ''
+    })
+    mapInstance.on('mouseenter', 'clusters-unclustered', () => {
+      mapInstance.getCanvas().style.cursor = 'pointer'
+    })
+    mapInstance.on('mouseleave', 'clusters-unclustered', () => {
+      mapInstance.getCanvas().style.cursor = ''
+    })
+
+    let hoverPopup = null
+    const showClusterPopup = (e) => {
+      if (hoverPopup) {
+        hoverPopup.remove()
+        hoverPopup = null
+      }
+      const features = mapInstance.queryRenderedFeatures(e.point, {
+        layers: ['clusters-circle', 'clusters-unclustered'],
+      })
+      if (features.length > 0) {
+        const fProps = features[0].properties
+        const clusterId = fProps.clusterId
+        const cluster = findClusterById(clusterId)
+        if (!cluster) return
+        const placeNames =
+          (cluster.placeIds || [])
+            .map((pid) => eventsPlaces.value.find((p) => p.id === pid)?.name)
+            .filter(Boolean)
+            .join(', ') || t('map.popupNoPlace')
+        hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false })
+          .setLngLat([cluster.longitude, cluster.latitude])
+          .setHTML(
+            `<b>${cluster.name}</b><br>${placeNames}<br>${t('map.events')} ${cluster.count}<br>${t('map.photos')} ${cluster.mediaCount}`,
+          )
+          .addTo(mapInstance)
+      }
+    }
+    const hideClusterPopup = () => {
+      if (hoverPopup) {
+        hoverPopup.remove()
+        hoverPopup = null
+      }
+    }
+
+    mapInstance.on('mouseenter', 'clusters-circle', showClusterPopup)
+    mapInstance.on('mouseleave', 'clusters-circle', hideClusterPopup)
+    mapInstance.on('mouseenter', 'clusters-unclustered', showClusterPopup)
+    mapInstance.on('mouseleave', 'clusters-unclustered', hideClusterPopup)
+
+    if (zoomHandler) {
+      mapInstance.off('zoomend', zoomHandler)
+    }
+    zoomHandler = () => {
+      updateAllRectangles()
+    }
+    mapInstance.on('zoomend', zoomHandler)
   }
 
   const applyMapTheme = (theme) => {
@@ -501,7 +780,6 @@
         if (isSimpleMode.value) {
           addSimpleMarker()
         } else {
-          renderMapFeatures()
           fitMapToClusters()
         }
       })
@@ -531,6 +809,7 @@
 
       mapInstance.on('load', () => {
         setupResizeObserver()
+        setupVisibilityObserver()
         mapInstance.resize()
         addCustomMapLayers()
         if (isSimpleMode.value) {
@@ -542,8 +821,15 @@
           mapInstance.once('idle', () => {
             if (!mapInstance) return
             mapInstance.resize()
-            renderMapFeatures()
             fitMapToClusters()
+            const renderAfterFit = () => {
+              if (!mapInstance) return
+              mapInstance.resize()
+              updateAllRectangles()
+              updateClustersGeoJSON()
+            }
+            mapInstance.once('moveend', renderAfterFit)
+            setTimeout(renderAfterFit, 800)
           })
         }
       })
@@ -557,20 +843,6 @@
       if (zoomHandler) {
         mapInstance.off('zoomend', zoomHandler)
       }
-      if (markerVisibilityHandler) {
-        mapInstance.off('zoomend', markerVisibilityHandler)
-      }
-      rectangleSources.forEach((sourceId) => {
-        if (mapInstance.getSource(sourceId)) {
-          if (mapInstance.getLayer(`${sourceId}-fill`)) mapInstance.removeLayer(`${sourceId}-fill`)
-          if (mapInstance.getLayer(`${sourceId}-stroke`))
-            mapInstance.removeLayer(`${sourceId}-stroke`)
-          mapInstance.removeSource(sourceId)
-        }
-      })
-      markerRefs.forEach((marker) => marker.remove())
-      markerRefs.clear()
-      rectangleSources.clear()
       if (mapInstance.getLayer('places-polygons-fill')) {
         mapInstance.removeLayer('places-polygons-fill')
       }
@@ -586,6 +858,36 @@
       if (mapInstance.getSource('clusters-geojson')) {
         mapInstance.removeSource('clusters-geojson')
       }
+      if (mapInstance.getLayer('clusters-rectangles-fill')) {
+        mapInstance.removeLayer('clusters-rectangles-fill')
+      }
+      if (mapInstance.getLayer('clusters-rectangles-stroke')) {
+        mapInstance.removeLayer('clusters-rectangles-stroke')
+      }
+      if (mapInstance.getSource('clusters-rectangles')) {
+        mapInstance.removeSource('clusters-rectangles')
+      }
+      if (mapInstance.getLayer('clusters-count')) {
+        mapInstance.removeLayer('clusters-count')
+      }
+      if (mapInstance.getLayer('clusters-circle')) {
+        mapInstance.removeLayer('clusters-circle')
+      }
+      if (mapInstance.getLayer('clusters-unclustered')) {
+        mapInstance.removeLayer('clusters-unclustered')
+      }
+      if (mapInstance.getLayer('clusters-unclustered-count')) {
+        mapInstance.removeLayer('clusters-unclustered-count')
+      }
+      if (mapInstance.getLayer('clusters-heatmap')) {
+        mapInstance.removeLayer('clusters-heatmap')
+      }
+      if (mapInstance.getSource('clusters-heatmap-raw')) {
+        mapInstance.removeSource('clusters-heatmap-raw')
+      }
+      if (mapInstance.getSource('clusters-geojson')) {
+        mapInstance.removeSource('clusters-geojson')
+      }
       if (simpleMarker) {
         simpleMarker.remove()
         simpleMarker = null
@@ -596,6 +898,8 @@
       }
       clearHoveredHighlight()
       teardownResizeObserver()
+      teardownVisibilityObserver()
+      if (rafId) cancelAnimationFrame(rafId)
       mapInstance.remove()
       mapInstance = null
     }
@@ -657,275 +961,102 @@
     })
   }
 
-  const updateClusterRectangle = (cluster) => {
-    const sourceId = `rect-${cluster.id}`
-    const bounds = getCellBounds(cluster.latitude, cluster.longitude)
-    const isSelected = isClusterHighlighted(cluster)
-    const rectColor = isSelected
-      ? MAP_VISUALS().cluster.rectangle.selectedColor
-      : MAP_VISUALS().cluster.rectangle.defaultColor
-    const fillOpacity = getRectangleOpacity(cluster.count, isSelected)
-
+  const updateAllRectangles = () => {
+    if (!mapInstance || !mapInstance.getSource('clusters-rectangles')) return
+    if (!isMapVisible.value) return
     const zoom = mapInstance.getZoom()
-    if (zoom >= MAP_ZOOM.cluster.rectangleMin) {
-      if (!mapInstance.getSource(sourceId)) {
-        mapInstance.addSource(sourceId, {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            geometry: {
-              type: 'Polygon',
-              coordinates: [bounds],
-            },
-          },
-        })
-        mapInstance.addLayer({
-          id: `${sourceId}-fill`,
-          type: 'fill',
-          source: sourceId,
-          paint: {
-            'fill-color': rectColor,
-            'fill-opacity': fillOpacity,
-          },
-        })
-        mapInstance.addLayer({
-          id: `${sourceId}-stroke`,
-          type: 'line',
-          source: sourceId,
-          paint: {
-            'line-color': rectColor,
-            'line-width': MAP_VISUALS().cluster.rectangle.strokeWidth,
-            'line-opacity': 0.5,
-          },
-        })
-
-        mapInstance.on('click', `${sourceId}-fill`, () => {
-          if (isDrawingMode.value) return
-          const currentlySelected = isClusterSelected(cluster)
-          skipFitMapOnClusterClick = true
-          urlFilters.toggleFilter('clusters', cluster.id, !currentlySelected)
-        })
-
-        mapInstance.on('mouseenter', `${sourceId}-fill`, () => {
-          mapInstance.getCanvas().style.cursor = 'pointer'
-        })
-        mapInstance.on('mouseleave', `${sourceId}-fill`, () => {
-          mapInstance.getCanvas().style.cursor = ''
-        })
-
-        rectangleSources.add(sourceId)
-      } else {
-        mapInstance.setPaintProperty(`${sourceId}-fill`, 'fill-color', rectColor)
-        mapInstance.setPaintProperty(`${sourceId}-fill`, 'fill-opacity', fillOpacity)
-        mapInstance.setPaintProperty(`${sourceId}-stroke`, 'line-color', rectColor)
-      }
-    } else {
-      if (mapInstance.getSource(sourceId)) {
-        if (mapInstance.getLayer(`${sourceId}-fill`)) mapInstance.removeLayer(`${sourceId}-fill`)
-        if (mapInstance.getLayer(`${sourceId}-stroke`))
-          mapInstance.removeLayer(`${sourceId}-stroke`)
-        mapInstance.removeSource(sourceId)
-        rectangleSources.delete(sourceId)
-      }
+    if (zoom < MAP_ZOOM.cluster.rectangleMin) {
+      mapInstance.getSource('clusters-rectangles').setData({
+        type: 'FeatureCollection',
+        features: [],
+      })
+      return
     }
-  }
-
-  const renderMapFeatures = () => {
-    if (!mapInstance || isSimpleMode.value) return
-
-    const existingMarkers = new Map(markerRefs)
-    existingMarkers.forEach((marker, clusterId) => {
-      if (!clusters.value.find((c) => c.id === clusterId)) {
-        marker.remove()
-        markerRefs.delete(clusterId)
-      }
-    })
-
-    rectangleSources.forEach((sourceId) => {
-      if (!clusters.value.find((c) => `rect-${c.id}` === sourceId)) {
-        if (mapInstance.getSource(sourceId)) {
-          if (mapInstance.getLayer(`${sourceId}-fill`)) mapInstance.removeLayer(`${sourceId}-fill`)
-          if (mapInstance.getLayer(`${sourceId}-stroke`))
-            mapInstance.removeLayer(`${sourceId}-stroke`)
-          mapInstance.removeSource(sourceId)
-        }
-        rectangleSources.delete(sourceId)
-      }
-    })
-
-    clusters.value.forEach((cluster) => {
-      if (cluster.latitude !== null && cluster.longitude !== null && cluster.count > 0) {
+    const features = clusters.value
+      .filter((c) => c.latitude != null && c.longitude != null && c.count > 0)
+      .map((cluster) => {
+        const bounds = getCellBounds(cluster.latitude, cluster.longitude)
         const isSelected = isClusterHighlighted(cluster)
-        const rectColor = isSelected
-          ? MAP_VISUALS().cluster.rectangle.selectedColor
-          : MAP_VISUALS().cluster.rectangle.defaultColor
-        const m = MAP_VISUALS().cluster.marker
-
-        if (!markerRefs.has(cluster.id)) {
-          const el = document.createElement('div')
-          el.innerHTML = `<div class="marker-icon${isSelected ? ' selected' : ''}" style="background-color: ${rectColor}; width: ${m.size}px; height: ${m.size}px; border-radius: ${m.borderRadius}; border: ${m.borderWidth}px solid ${m.borderColor}; display: flex; align-items: center; justify-content: center; font-size: ${m.fontSize}; color: ${m.textColor};">${cluster.mediaCount}</div>`
-          el.style.width = `${m.size}px`
-          el.style.height = `${m.size}px`
-          el.style.cursor = 'pointer'
-          el.style.opacity = isSelected ? String(m.selectedOpacity) : String(m.defaultOpacity)
-
-          const marker = new maplibregl.Marker({ element: el })
-            .setLngLat([cluster.longitude, cluster.latitude])
-            .addTo(mapInstance)
-
-          el.addEventListener('click', () => {
-            if (isDrawingMode.value) return
-            const currentlySelected = isClusterSelected(cluster)
-            skipFitMapOnClusterClick = true
-            urlFilters.toggleFilter('clusters', cluster.id, !currentlySelected)
-          })
-
-          el.addEventListener('mouseenter', () => {
-            new maplibregl.Popup({ closeButton: false, closeOnClick: false })
-              .setLngLat([cluster.longitude, cluster.latitude])
-              .setHTML(
-                `<b>${cluster.name}</b><br>${getPlaceNames(cluster) || t('map.popupNoPlace')}<br>${t('map.events')} ${cluster.count}<br>${t('map.photos')} ${cluster.mediaCount}`,
-              )
-              .addTo(mapInstance)
-          })
-
-          el.addEventListener('mouseleave', () => {
-            const popups = document.querySelectorAll('.maplibregl-popup')
-            popups.forEach((p) => p.remove())
-          })
-
-          markerRefs.set(cluster.id, marker)
-        } else {
-          const marker = markerRefs.get(cluster.id)
-          const el = marker.getElement()
-          const iconEl = el.querySelector('.marker-icon')
-          if (iconEl) {
-            iconEl.className = `marker-icon${isSelected ? ' selected' : ''}`
-            iconEl.style.backgroundColor = rectColor
-          }
-          marker.getElement().style.opacity = isSelected
-            ? String(MAP_VISUALS().cluster.marker.selectedOpacity)
-            : String(MAP_VISUALS().cluster.marker.defaultOpacity)
-        }
-
-        updateClusterRectangle(cluster)
-      }
-    })
-
-    if (zoomHandler) {
-      mapInstance.off('zoomend', zoomHandler)
-    }
-    zoomHandler = () => {
-      clusters.value.forEach((c) => updateClusterRectangle(c))
-    }
-    mapInstance.on('zoomend', zoomHandler)
-
-    if (markerVisibilityHandler) {
-      mapInstance.off('zoomend', markerVisibilityHandler)
-    }
-    markerVisibilityHandler = () => {
-      updateMarkerVisibility()
-    }
-    mapInstance.on('zoomend', markerVisibilityHandler)
-
-    updateClustersGeoJSON()
-    updateMarkerVisibility()
-  }
-
-  const updateMarkerStyles = () => {
-    if (!mapInstance || isSimpleMode.value) return
-    clusters.value.forEach((cluster) => {
-      const marker = markerRefs.get(cluster.id)
-      if (marker) {
-        const isSelected = isClusterHighlighted(cluster)
-        const rectColor = isSelected
-          ? MAP_VISUALS().cluster.rectangle.selectedColor
-          : MAP_VISUALS().cluster.rectangle.defaultColor
-        const m = MAP_VISUALS().cluster.marker
-        const el = marker.getElement()
-        const iconEl = el.querySelector('.marker-icon')
-        if (iconEl) {
-          iconEl.className = `marker-icon${isSelected ? ' selected' : ''}`
-          iconEl.style.backgroundColor = rectColor
-        }
-        marker.getElement().style.opacity = isSelected
-          ? String(m.selectedOpacity)
-          : String(m.defaultOpacity)
-      }
-
-      const sourceId = `rect-${cluster.id}`
-      if (mapInstance.getSource(sourceId)) {
-        const isSelected = isClusterHighlighted(cluster)
-        const rectColor = isSelected
-          ? MAP_VISUALS().cluster.rectangle.selectedColor
-          : MAP_VISUALS().cluster.rectangle.defaultColor
         const fillOpacity = getRectangleOpacity(cluster.count, isSelected)
-        if (mapInstance.getLayer(`${sourceId}-fill`)) {
-          mapInstance.setPaintProperty(`${sourceId}-fill`, 'fill-color', rectColor)
-          mapInstance.setPaintProperty(`${sourceId}-fill`, 'fill-opacity', fillOpacity)
+        return {
+          type: 'Feature',
+          id: cluster.id,
+          properties: {
+            clusterId: cluster.id,
+            count: cluster.count,
+            selected: isSelected,
+            fillOpacity: fillOpacity,
+          },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [bounds],
+          },
         }
-        if (mapInstance.getLayer(`${sourceId}-stroke`)) {
-          mapInstance.setPaintProperty(`${sourceId}-stroke`, 'line-color', rectColor)
-        }
-      }
+      })
+    mapInstance.getSource('clusters-rectangles').setData({
+      type: 'FeatureCollection',
+      features: features,
     })
-    updateClustersGeoJSON()
   }
 
   const updateClustersGeoJSON = () => {
     if (!mapInstance || !mapInstance.getSource('clusters-geojson')) return
+    const filtered = getFilteredClusters()
+    const features = filtered.map((c) => {
+      const isSelected = isClusterSelected(c)
+      const base = Math.min((c.count || 1) * 0.03, 1.0)
+      const pointOpacity = Math.max(0.3, base)
+      return {
+        type: 'Feature',
+        properties: {
+          clusterId: c.id,
+          count: c.count,
+          mediaCount: c.mediaCount,
+          name: c.name || '',
+          placeIds: c.placeIds || [],
+          selected: isSelected,
+          pointOpacity: pointOpacity,
+          countLabel: formatCount(c.count),
+        },
+        geometry: { type: 'Point', coordinates: [c.longitude, c.latitude] },
+      }
+    })
+    const data = { type: 'FeatureCollection', features }
+    mapInstance.getSource('clusters-geojson').setData(data)
+    if (mapInstance.getSource('clusters-heatmap-raw')) {
+      mapInstance.getSource('clusters-heatmap-raw').setData(data)
+    }
+  }
+
+  const getFilteredClusters = () => {
     const selectedPlaceIds = eventsPlaces.value
       .filter((p) => selectedPlaces.value.includes(p.name))
       .map((p) => p.id)
-    const features = clusters.value
-      .filter((c) => c.latitude != null && c.longitude != null && c.count > 0)
-      .filter((c) => {
-        if (selectedClusterIds.value.length === 0 && selectedPlaceIds.length === 0) return true
-        if (selectedClusterIds.value.includes(c.id)) return true
-        if (selectedPlaceIds.length === 0) return false
-        return (c.placeIds || []).some((pid) => selectedPlaceIds.includes(pid))
-      })
-      .map((c) => ({
-        type: 'Feature',
-        properties: { count: c.count, mediaCount: c.mediaCount, clusterId: c.id },
-        geometry: { type: 'Point', coordinates: [c.longitude, c.latitude] },
-      }))
-    mapInstance.getSource('clusters-geojson').setData({ type: 'FeatureCollection', features })
+    return clusters.value.filter((c) => {
+      if (c.latitude == null || c.longitude == null || c.count <= 0) return false
+      if (selectedClusterIds.value.length === 0 && selectedPlaceIds.length === 0) return true
+      if (selectedClusterIds.value.includes(c.id)) return true
+      if (selectedPlaceIds.length === 0) return false
+      return (c.placeIds || []).some((pid) => selectedPlaceIds.includes(pid))
+    })
   }
 
-  const updateMarkerVisibility = () => {
-    if (!mapInstance) return
-    const zoom = mapInstance.getZoom()
-    const visible = zoom >= MAP_ZOOM.cluster.markerVisibleMin
-    markerRefs.forEach((marker) => {
-      const el = marker.getElement()
-      if (el) {
-        el.style.display = visible ? '' : 'none'
-      }
-    })
+  const findClusterById = (clusterId) => {
+    return getFilteredClusters().find((c) => c.id === clusterId) || null
   }
 
   const fitMapToClusters = () => {
     if (!mapInstance || isSimpleMode.value) return
 
-    const selectedPlaceIds = eventsPlaces.value
-      .filter((p) => selectedPlaces.value.includes(p.name))
-      .map((p) => p.id)
-
-    const clustersList = clusters.value
-    const coords = clustersList
-      .filter((p) => p.latitude != null && p.longitude != null && p.count > 0)
-      .filter((p) => {
-        if (selectedPlaceIds.length === 0) return true
-        return (p.placeIds || []).some((pid) => selectedPlaceIds.includes(pid))
-      })
+    const filtered = getFilteredClusters()
+    const coords = filtered
       .map((p) => [p.longitude, p.latitude])
       .filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat))
 
     if (coords.length > 0) {
       const bounds = new maplibregl.LngLatBounds()
       coords.forEach((coord) => bounds.extend(coord))
-      mapInstance.fitBounds(bounds, { padding: 100, maxZoom: MAP_ZOOM.fitBounds.clusters })
+      mapInstance.fitBounds(bounds, { padding: 30, maxZoom: 17 })
     }
   }
 
@@ -1152,7 +1283,8 @@
     clustersState.clusters,
     () => {
       if (!mapInstance || isSimpleMode.value) return
-      renderMapFeatures()
+      updateClustersGeoJSON()
+      updateAllRectangles()
       if (!skipFitMapOnClusterClick && !skipFitMapOnExternalUrlChange.value) {
         fitMapToClusters()
       }
@@ -1165,7 +1297,8 @@
     selectedClusterIds,
     () => {
       if (isSimpleMode.value) return
-      updateMarkerStyles()
+      updateAllRectangles()
+      updateClustersGeoJSON()
       if (!skipFitMapOnClusterClick && !skipFitMapOnExternalUrlChange.value) {
         fitMapToClusters()
       }
@@ -1178,7 +1311,8 @@
     selectedPlaces,
     () => {
       if (!mapInstance || isSimpleMode.value) return
-      updateMarkerStyles()
+      updateAllRectangles()
+      updateClustersGeoJSON()
       updatePlacesPolygons()
       if (!skipFitMapOnClusterClick && !skipFitMapOnExternalUrlChange.value) {
         fitMapToClusters()
@@ -1192,7 +1326,8 @@
     eventsPlaces,
     () => {
       if (isSimpleMode.value) return
-      if (mapInstance) updateMarkerStyles()
+      updateAllRectangles()
+      updateClustersGeoJSON()
       updatePlacesPolygons()
     },
     { deep: true },
@@ -1215,33 +1350,43 @@
     { deep: true },
   )
 
+  watch(isMapVisible, (visible) => {
+    if (!visible || !mapInstance || isSimpleMode.value) return
+    updateAllRectangles()
+    updateClustersGeoJSON()
+    fitMapToClusters()
+  })
+
+  watch(
+    () => urlFilters.filters,
+    () => {
+      if (isSimpleMode.value) return
+      clustersState.loadClusters()
+    },
+    { deep: true },
+  )
+
   provide('clustersContext', {
     clusters,
     currentClusterId,
     loadClusters: clustersState.loadClusters,
+    reloadClusters: clustersState.reload,
     selectCluster: (clusterId) => urlFilters.toggleFilter('clusters', clusterId, true),
   })
 
   onMounted(async () => {
-    console.log('ClustersView onMounted')
     if (!isSimpleMode.value) {
       await new Promise((resolve) =>
         window.addEventListener('ws:server-ready', resolve, { once: true }),
       )
-      console.log('Server ready')
     }
 
     try {
       if (!isSimpleMode.value) {
         await clustersState.loadClusters()
-        console.log(
-          '[Map.vue] Clusters loaded from API, count:',
-          clustersState.clusters.value.length,
-        )
       }
       isLoading.value = false
       await new Promise((resolve) => setTimeout(resolve, 100))
-      console.log('[Map.vue] Calling initMap')
       await initMap()
     } catch (err) {
       console.error('Initialization error:', err)
@@ -1257,5 +1402,5 @@
     }
   })
 
-  defineExpose({ startPolygonDrawing, markExternalUrlChange })
+  defineExpose({ startPolygonDrawing, markExternalUrlChange, reloadClusters: clustersState.reload })
 </script>

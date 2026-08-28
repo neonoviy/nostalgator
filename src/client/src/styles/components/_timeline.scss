@@ -33,6 +33,12 @@
   font-weight: var(--font-weight-bold);
 }
 
+@media screen and (max-width: 720px) {
+  .year-header {
+    padding: var(--spacing-sm);
+  }
+}
+
 .end-of-list {
   text-align: center;
   padding: var(--spacing-xl);

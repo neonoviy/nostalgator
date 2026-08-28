@@ -78,6 +78,7 @@ class FaceRecognitionService {
           const target = isKnown ? this._knownPersonsCache : this._passerbyPersonsCache
           target.set(r.id, {
             id: r.id,
+            participantId: r.participantId || null,
             _sum: sum,
             _count: count,
             _cachedAvg: decoded,
@@ -411,6 +412,32 @@ class FaceRecognitionService {
           })
         }
       }
+    }
+
+    const matchedParticipantIds = new Set()
+    for (const face of newFaces) {
+      const entry = this._knownPersonsCache.get(face.personId)
+      if (entry && entry.participantId) {
+        matchedParticipantIds.add(entry.participantId)
+      }
+    }
+
+    if (matchedParticipantIds.size > 0) {
+      const eventRecord = await this.prisma.event.findUnique({
+        where: { id: event.id },
+        select: { allowedGroupIds: true },
+      })
+      const allowedGroupIds = eventRecord?.allowedGroupIds || null
+
+      await this.prisma.$transaction(async (tx) => {
+        for (const participantId of matchedParticipantIds) {
+          await tx.eventParticipant.upsert({
+            where: { eventId_participantId: { eventId: event.id, participantId } },
+            update: {},
+            create: { eventId: event.id, participantId, allowedGroupIds },
+          })
+        }
+      })
     }
 
     if (newFaces.length > 0) {
@@ -1009,18 +1036,6 @@ class FaceRecognitionService {
     }
     if (best) return best
 
-    for (const person of passerbyCache.values()) {
-      if (!person._sum) continue
-      try {
-        const avg = this._getPersonAverage(person)
-        const sim = this._cosineSimilarityFloat32(descriptor, avg)
-        if (sim > this.FACE_MATCH_THRESHOLD && (!best || sim > best.similarity)) {
-          best = { personId: person.id, similarity: sim }
-        }
-      } catch (e) {
-        logger.warn(`Skipping corrupted descriptor for Person #${person.id}: ${e.message}`)
-      }
-    }
     return best
   }
 

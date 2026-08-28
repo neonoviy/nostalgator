@@ -398,6 +398,45 @@ class TagService {
       return []
     }
   }
+
+  async getPhotoPoints(filters = {}, user = null) {
+    try {
+      const visibility = this._buildVisibilitySQL(user, 'm', 'e')
+
+      const yearFilterCondition =
+        filters.years && filters.years.length > 0
+          ? `e.year IN (${filters.years.map(() => '?').join(',')})`
+          : ''
+
+      const yearFilterParams = filters.years || []
+
+      const whereConditions = []
+      if (visibility.where) whereConditions.push(visibility.where)
+      if (yearFilterCondition) whereConditions.push(yearFilterCondition)
+      const finalWhere =
+        whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : ''
+
+      const sql = `
+        SELECT m.latitude, m.longitude
+        FROM Media m
+        JOIN Event e ON e.id = m.eventId
+        ${finalWhere}${finalWhere ? ' AND ' : 'WHERE '}m.latitude IS NOT NULL
+        AND m.longitude IS NOT NULL
+      `
+
+      const allParams = [...visibility.params, ...yearFilterParams]
+
+      const result = await this.prisma.$queryRawUnsafe(sql, ...allParams)
+
+      return result.map((row) => ({
+        latitude: Number(row.latitude),
+        longitude: Number(row.longitude),
+      }))
+    } catch (error) {
+      logger.error('Failed to get photo points', error)
+      return []
+    }
+  }
   // --- EventTypes ---
 
   async getEventTypes() {

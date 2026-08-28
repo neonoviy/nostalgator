@@ -12,6 +12,12 @@
   }
 }
 
+@media screen and (max-width: 720px) {
+  .event-card {
+    padding: var(--spacing-sm);
+  }
+}
+
 .event-header {
   @include flex-between;
   align-items: flex-start;
@@ -85,6 +91,7 @@
   margin-right: 5px;
   vertical-align: top;
   flex: 1 1 auto;
+  max-width: 32%;
 
   a {
     // display: inline-block;

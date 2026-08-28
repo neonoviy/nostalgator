@@ -67,6 +67,17 @@ module.exports = (app, ctx) => {
       res.error(ERROR_CODES.INTERNAL_ERROR, 'Failed to get clusters')
     }
   })
+
+  // GET /api/media/points
+  app.get('/api/media/points', optionalAuth, validateTagFilters, async (req, res) => {
+    try {
+      const points = await ctx.tagService.getPhotoPoints(req.validatedFilters, req.user)
+      res.success(points)
+    } catch (error) {
+      logger.error('Failed to get photo points', error)
+      res.error(ERROR_CODES.INTERNAL_ERROR, 'Failed to get photo points')
+    }
+  })
 }
 
 /**
@@ -144,16 +155,9 @@ module.exports = (app, ctx) => {
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 id: { type: integer }
- *                 name: { type: string }
- *                 latitude: { type: number, nullable: true }
- *                 longitude: { type: number, nullable: true }
- *                 radius: { type: integer }
- *                 polygon: { type: array, nullable: true, items: { type: array, items: { type: number } } }
+ *               $ref: '#/components/schemas/Place'
  *       404:
- *         description: Place not found
+ *         description: Not found
  */
 
 /**

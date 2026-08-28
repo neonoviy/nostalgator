@@ -77,6 +77,10 @@ export function useWebSocket() {
         window.dispatchEvent(new CustomEvent('ws:watcher:cycle-complete', { detail: data }))
         break
 
+      case 'scan:pending-folders':
+        window.dispatchEvent(new CustomEvent('ws:scan:pending-folders', { detail: data }))
+        break
+
       case 'auth:logout':
         window.dispatchEvent(new CustomEvent('ws:auth-logout'))
         break

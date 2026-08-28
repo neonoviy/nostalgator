@@ -226,7 +226,8 @@ class ThumbnailService {
     try {
       const mediaRecords = await prisma.media.findMany({
         where: { eventId },
-        select: { id: true, filename: true, clusterId: true },
+        select: { id: true, filename: true, clusterId: true, capturedAt: true },
+        orderBy: [{ capturedAt: 'asc' }, { filename: 'asc' }],
         take: limit ? parseInt(limit, 10) : undefined,
       })
 
@@ -270,6 +271,7 @@ class ThumbnailService {
           thumbnails.push({
             id: media.id,
             filename: media.filename,
+            capturedAt: media.capturedAt,
             url: `/thumbnails/${year}/${eventId}/${thumbFilename}?v=${cacheBuster}`,
             clusterId: media.clusterId ?? null,
             participants: Array.from(participantSet),

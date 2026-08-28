@@ -19,7 +19,8 @@
   .clear-filters-container {
     position: fixed;
     bottom: -70px;
-    width: 300px;
+    width: 400px;
+    background: var(--bg);
     border-top: 1px solid var(--border-color);
     padding-top: var(--spacing-md);
     @include transition-base;

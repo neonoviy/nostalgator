@@ -41,6 +41,9 @@ export function useScan(isAdmin) {
     clusters: 0,
   })
 
+  // Folders present on disk but not yet scanned (admin notification target)
+  const pendingFolders = ref([])
+
   // Computed: is any process active?
   const isScanning = computed(() => scanProcesses.value.scanning)
   const isAnyActive = computed(
@@ -291,6 +294,25 @@ export function useScan(isAdmin) {
     }
   }
 
+  // Load folders present on disk but not yet scanned
+  const loadPendingFolders = async () => {
+    try {
+      const token = getToken()
+      const response = await fetch('/api/scan/pending', {
+        headers: {
+          Authorization: token ? `Bearer ${token}` : '',
+          'Cache-Control': 'no-cache',
+        },
+      })
+      if (!response.ok) return
+      const resData = await response.json()
+      const data = resData.success ? resData.data : resData
+      pendingFolders.value = Array.isArray(data?.folders) ? data.folders : []
+    } catch (error) {
+      console.error('Failed to load pending folders:', error)
+    }
+  }
+
   const startStatsPollingDuringScan = () => {
     loadStats()
     if (statsPollInterval) clearInterval(statsPollInterval)
@@ -462,6 +484,7 @@ export function useScan(isAdmin) {
     scanLogs,
     logsContainer,
     stats,
+    pendingFolders,
 
     // Methods
     startFullScan,
@@ -470,6 +493,7 @@ export function useScan(isAdmin) {
     toggleImportWatch,
     loadWatchSettings,
     loadStats,
+    loadPendingFolders,
     checkScanStatus,
     setScanCompletionHandler,
   }

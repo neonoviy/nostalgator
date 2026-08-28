@@ -1,8 +1,8 @@
 const fs = require('fs').promises
-const chokidar = require('chokidar')
 const path = require('path')
 const { normalizePath, isMediaFile } = require('../utils/fileUtils')
 const logger = require('../utils/logger')
+const { createRecursiveWatcher } = require('./recursiveWatcher')
 
 async function safeMove(src, dest) {
   try {
@@ -38,6 +38,8 @@ class WatcherService {
     this.debounceTimers = new Map()
     this.DEBOUNCE_DELAY = 10000
     this.isRenaming = false
+    this.isEnabled = false
+    this.suppressedPaths = new Map()
     this.exiftool = require('exiftool-vendored').exiftool
   }
 
@@ -50,56 +52,119 @@ class WatcherService {
   }
 
   /**
+   * Временно подавить обработку изменений для указанного пути.
+   * Используется когда API сам модифицирует файл, чтобы избежать
+   * двойной обработки: API уже обновил БД/кластеры, а вотчер не должен
+   * запускать повторный scan/faces/places за то же изменение.
+   * @param {string} filePath
+   * @param {number} [ttlMs=5000]
+   */
+  suppressPath(filePath, ttlMs = 5000) {
+    const normalized = normalizePath(filePath)
+    this.suppressedPaths.set(normalized, Date.now() + ttlMs)
+  }
+
+  /**
+   * Проверить, подавлен ли путь.
+   * @param {string} filePath
+   * @returns {boolean}
+   */
+  isSuppressed(filePath) {
+    const normalized = normalizePath(filePath)
+    const expiry = this.suppressedPaths.get(normalized)
+    if (!expiry) return false
+    if (Date.now() > expiry) {
+      this.suppressedPaths.delete(normalized)
+      return false
+    }
+    return true
+  }
+
+  /**
    * Запуск наблюдения за папкой Originals
    * @param {string} originalsPath
    */
   startWatching(originalsPath) {
     logger.scan(`Start watching: ${originalsPath}`)
-    this.watcher = chokidar.watch(originalsPath, {
-      ignored: /(^|[\/\\])\../,
-      persistent: true,
-      ignoreInitial: true,
-      depth: 3,
-      awaitWriteFinish: { stabilityThreshold: 2000, pollInterval: 100 },
+    this.watcher = createRecursiveWatcher(originalsPath, {
+      onFileAdded: (p) => this.handleFileAdded(p),
+      onFileRemoved: (p) => this.handlePathRemoved(p),
+      onDirAdded: (p) => this.handleDirectoryAdded(p),
+      onDirRemoved: (p) => this.handleDirectoryRemoved(p),
+      onFileChanged: (p) => this.handleFileChanged(p),
+      onError: (error) => logger.error(`Watch error: ${error}`),
+      onUnknown: () => logger.warn('Watch event with unknown path (possible dropped event)'),
     })
 
-    this.watcher
-      .on('add', (filePath) => this.handleFileAdded(filePath))
-      .on('unlink', (filePath) => this.handleFileRemoved(filePath))
-      .on('addDir', (dirPath) => this.handleDirectoryAdded(dirPath))
-      .on('unlinkDir', (dirPath) => this.handleDirectoryRemoved(dirPath))
-      .on('error', (error) => logger.error(`Watch error: ${error}`))
-      .on('ready', () => {
-        logger.success('Watcher for Originals is ready')
-        this.isRenaming = false
-      })
+    logger.success('Watcher for Originals is ready')
+    this.isRenaming = false
+    this.isEnabled = true
   }
 
   // Запуск наблюдения за папкой Import
   startWatchingImport(importPath) {
     logger.import(`Start watching Import: ${importPath}`)
 
-    this.importWatcher = chokidar.watch(importPath, {
-      ignored: /(^|[\/\\])\../, // Игнорировать скрытые файлы
-      persistent: true,
-      ignoreInitial: false, // Обрабатывать существующие файлы при старте
-      depth: 5, // Глубокая вложенность
-      awaitWriteFinish: {
-        // Ждём завершения записи
-        stabilityThreshold: 2000, // 2 секунды после последнего изменения
-        pollInterval: 100,
+    // Linux: chokidar polling with ignoreInitial:false processes existing files at startup.
+    // Windows/macOS: native recursive watcher (single handle) + one-time initial scan below.
+    this.importWatcher = createRecursiveWatcher(
+      importPath,
+      {
+        onFileAdded: (p) => this.handleImportFileAdded(p),
+        onDirAdded: (p) => this.handleImportDirAdded(p),
+        onFileRemoved: (p) => logger.import(`File removed: ${p}`),
+        onDirRemoved: (p) => logger.import(`Dir removed: ${p}`),
+        onFileChanged: (p) => this.handleImportFileAdded(p),
+        onError: (error) => logger.error(`Import watch error: ${error}`),
+        onUnknown: () => logger.warn('Import watch event with unknown path'),
       },
-    })
+      { ignoreInitial: false },
+    )
 
-    // Обработчики событий — перемещаем файлы в Originals
-    this.importWatcher
-      .on('add', (filePath) => this.handleImportFileAdded(filePath))
-      .on('addDir', (dirPath) => this.handleImportDirAdded(dirPath))
-      .on('unlinkDir', (dirPath) => logger.import(`Dir removed: ${dirPath}`))
-      .on('error', (error) => logger.error(`Import watch error: ${error}`))
-      .on('ready', () => {
-        logger.success('Watcher for Import is ready')
-      })
+    logger.success('Watcher for Import is ready')
+
+    // Windows/macOS native watcher does not emit pre-existing entries, so run a
+    // one-time scan to process files already present in Import at startup.
+    if (this.importWatcher.native) {
+      this.processImportRoot(importPath).catch((error) =>
+        logger.error(`Initial Import scan failed: ${error.message}`),
+      )
+    }
+  }
+
+  // One-time recursive scan of the Import root (replaces chokidar ignoreInitial on native platforms).
+  async processImportRoot(importPath) {
+    const files = await this.scanImportDir(importPath)
+    if (files.length === 0) return
+
+    logger.import(`Initial scan: processing ${files.length} files from Import`)
+    const movedFiles = []
+    for (const filePath of files) {
+      try {
+        const movedTo = await this.processImportFile(filePath)
+        if (movedTo) movedFiles.push(movedTo)
+      } catch (error) {
+        logger.error(`Import file failed: ${path.basename(filePath)}`)
+      }
+    }
+
+    // Best-effort cleanup of now-empty subfolders left in Import.
+    try {
+      const entries = await fs.readdir(importPath, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const fullPath = path.join(importPath, entry.name)
+          const remaining = await this.scanImportDir(fullPath)
+          if (remaining.length === 0) {
+            await fs.rm(fullPath, { recursive: true, force: true }).catch(() => {})
+          }
+        }
+      }
+    } catch (error) {
+      logger.error(`Import cleanup failed: ${error.message}`)
+    }
+
+    logger.success(`Initial Import scan complete: ${movedFiles.length} files processed`)
   }
 
   // Обработка отдельного файла из Import (файл напрямую в Import, без папки)
@@ -175,6 +240,7 @@ class WatcherService {
 
   // Остановка наблюдения
   stopWatching() {
+    this.isEnabled = false
     if (this.watcher) {
       this.watcher.close()
       logger.scan('Watcher stopped')
@@ -376,6 +442,8 @@ class WatcherService {
 
   // Обработка добавления файла
   async handleFileAdded(filePath) {
+    if (!this.isEnabled) return
+    if (this.isSuppressed(filePath)) return
     if (!isMediaFile(filePath)) return
 
     const eventPath = this.extractEventPath(filePath)
@@ -407,7 +475,11 @@ class WatcherService {
         }
       } else {
         logger.scan(`File in new folder, scanning event...`)
-        const newEvent = await this.scanService.scanEvent(eventPath)
+        const scanResult = await this.scanService.scanEvent(eventPath)
+        // scanEvent returns { isNew: bool }, not the event object — re-read the
+        // created event to obtain real id/folderPath (otherwise we'd enqueue
+        // face/place jobs with id: undefined).
+        const newEvent = scanResult ? await this.findEventByFilePath(filePath) : null
         if (!newEvent) {
           if (this.websocketService) this.websocketService.notifyWatcherCycleComplete()
           return
@@ -446,6 +518,8 @@ class WatcherService {
 
   // Обработка удаления файла
   async handleFileRemoved(filePath) {
+    if (!this.isEnabled) return
+    if (this.isSuppressed(filePath)) return
     if (!isMediaFile(filePath)) return
 
     this.debounce(`unlink_${filePath}`, async () => {
@@ -457,8 +531,68 @@ class WatcherService {
     })
   }
 
+  // Обработка изменения (перезаписи) существующего файла
+  async handleFileChanged(filePath) {
+    if (!this.isEnabled) return
+    if (this.isSuppressed(filePath)) return
+    if (!isMediaFile(filePath)) return
+
+    const eventPath = this.extractEventPath(filePath)
+
+    this.debounce(`change_${eventPath}`, async () => {
+      const event = await this.findEventByFilePath(filePath)
+      if (!event) return
+
+      logger.scan(`File changed in event ${event.id}, syncing media`)
+      await this.scanService.eventService.syncEventMedia(event.id, event.folderPath)
+
+      if (this.thumbnailService) {
+        await this.thumbnailService.processQueue()
+      }
+
+      // Places: GPS могли измениться
+      if (this.placeRecognitionService && this.scanService.autodetectPlaces) {
+        this.placeRecognitionService.queueGeneration({
+          id: event.id,
+          year: event.year,
+          folderPath: event.folderPath,
+          isFirstScan: false,
+        })
+      }
+      if (this.scanService.faceRecognitionService && this.scanService.autodetectFaces) {
+        this.scanService.faceRecognitionService.queueGeneration({
+          id: event.id,
+          folderPath: event.folderPath,
+        })
+      }
+
+      const placePromise = this.placeRecognitionService?.isQueueActive()
+        ? this.placeRecognitionService.processQueue()
+        : null
+      const facePromise = this.scanService.faceRecognitionService?.isQueueActive()
+        ? this.scanService.faceRecognitionService.processQueue()
+        : null
+      if (placePromise) await placePromise
+      if (facePromise) await facePromise
+
+      if (this.websocketService) this.websocketService.notifyWatcherCycleComplete()
+    })
+  }
+
+  // Обработка удаления, когда неизвестно — файл это или папка (native рекурсивный вотчер)
+  handlePathRemoved(filePath) {
+    if (!this.isEnabled) return
+    if (this.isSuppressed(filePath)) return
+    if (isMediaFile(filePath)) {
+      return this.handleFileRemoved(filePath)
+    }
+    return this.handleDirectoryRemoved(filePath)
+  }
+
   // Обработка добавления папки
   async handleDirectoryAdded(dirPath) {
+    if (!this.isEnabled) return
+    if (this.isSuppressed(dirPath)) return
     if (this.isRenaming) {
       logger.warn(`Ignoring directory add (renaming in progress)`)
       return
@@ -473,6 +607,8 @@ class WatcherService {
 
   // Обработка удаления папки
   async handleDirectoryRemoved(dirPath) {
+    if (!this.isEnabled) return
+    if (this.isSuppressed(dirPath)) return
     if (this.isRenaming) {
       logger.warn(`Ignoring directory removal (renaming in progress)`)
       return

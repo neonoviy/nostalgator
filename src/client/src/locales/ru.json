@@ -3,6 +3,8 @@
   "app.editEvent": "Редактировать событие",
   "app.editEventWithTitle": "Событие #{id}",
   "app.newFilesDetected": "Обнаружены и обработаны новые файлы",
+  "app.newEventsDetected": "Обнаружены новые события. Запустите сканирование",
+  "app.openScan": "Открыть сканирование",
   "app.refreshTimeline": "Обновить таймлайн",
   "app.serverUnavailable": "Сервер недоступен: {status}",
   "app.serverError": "Ошибка сервера",

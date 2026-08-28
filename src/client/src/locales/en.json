@@ -3,6 +3,8 @@
   "app.editEvent": "Edit event",
   "app.editEventWithTitle": "Edit event #{id}",
   "app.newFilesDetected": "New files detected and processed",
+  "app.newEventsDetected": "New events detected. Start a scan",
+  "app.openScan": "Open scan",
   "app.refreshTimeline": "Refresh timeline",
   "app.serverUnavailable": "Server unavailable: {status}",
   "app.serverError": "Server error",

@@ -166,6 +166,14 @@ class WebSocketService {
   }
 
   /**
+   * Уведомление о папках, обнаруженных на диске, но ещё не отсканированных.
+   * @param {string[]} folders - относительные пути (year/event)
+   */
+  notifyPendingFolders(folders = []) {
+    this.broadcast('scan:pending-folders', { folders })
+  }
+
+  /**
    * Уведомление о прогрессе распознавания лиц для конкретного события
    * @param {number} eventId
    * @param {Object} data - { phase, ...phase-specific fields }

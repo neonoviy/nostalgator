@@ -102,13 +102,24 @@ module.exports = (app, ctx) => {
  * @openapi
  * /api/settings:
  *   get:
-  *     summary: Get settings
+ *     summary: Get settings
  *     tags: [Settings]
  *     responses:
  *       200:
-  *         description: Application settings
+ *         description: Application settings
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 originalsWatchEnabled: { type: boolean }
+ *                 importWatchEnabled: { type: boolean }
+ *                 theme: { type: string }
+ *                 scanAllowedGroupIds: { type: array, nullable: true, items: { type: integer } }
+ *                 autodetectFacesEnabled: { type: boolean }
+ *                 autodetectPlacesEnabled: { type: boolean }
  *   put:
-  *     summary: Update settings
+ *     summary: Update settings
  *     tags: [Settings]
  *     security:
  *       - BearerAuth: []
@@ -118,9 +129,29 @@ module.exports = (app, ctx) => {
  *           schema:
  *             type: object
  *             properties:
+ *               enabled: { type: boolean, description: Alias for originalsWatchEnabled }
  *               originalsWatchEnabled: { type: boolean }
  *               importWatchEnabled: { type: boolean }
+ *               theme: { type: string }
+ *               scanAllowedGroupIds: { type: array, nullable: true, items: { type: integer } }
  *     responses:
  *       200:
-  *         description: Settings updated
+ *         description: Settings updated
+ */
+
+/**
+ * @openapi
+ * /api/settings/readonly:
+ *   get:
+ *     summary: Check if originals directory is read-only
+ *     tags: [Settings]
+ *     responses:
+ *       200:
+ *         description: Read-only status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 readonly: { type: boolean }
  */

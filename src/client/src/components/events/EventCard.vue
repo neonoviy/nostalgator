@@ -11,28 +11,28 @@
         <!-- Display event tags -->
         <div class="event-tags">
           <span class="tag-group">{{ pluralizeFiles(event.mediaCount) }}.</span>
-          <div class="tag-group" v-if="event.participants.length > 0">
+          <div class="tag-group" v-if="sortedParticipants.length > 0">
             <span
-              v-for="(participant, idx) in event.participants"
+              v-for="(participant, idx) in sortedParticipants"
               :key="'part-' + idx"
               class="tag participants-tag"
             >
-              {{ participant }}<span v-if="idx < event.participants.length - 1">, </span> </span
+              {{ participant }}<span v-if="idx < sortedParticipants.length - 1">, </span> </span
             >.
           </div>
-          <div class="tag-group" v-if="event.places.length > 0">
-            <span v-for="(loc, idx) in event.places" :key="'loc-' + idx" class="tag location-tag">
-              {{ loc }}<span v-if="idx < event.places.length - 1">, </span> </span
+          <div class="tag-group" v-if="sortedPlaces.length > 0">
+            <span v-for="(loc, idx) in sortedPlaces" :key="'loc-' + idx" class="tag location-tag">
+              {{ loc }}<span v-if="idx < sortedPlaces.length - 1">, </span> </span
             >.
           </div>
-          <div class="tag-group" v-if="event.eventType.length > 0">
-            <span v-for="(type, idx) in event.eventType" :key="'type-' + idx" class="tag type-tag">
-              {{ type }}<span v-if="idx < event.eventType.length - 1">, </span> </span
+          <div class="tag-group" v-if="sortedEventTypes.length > 0">
+            <span v-for="(type, idx) in sortedEventTypes" :key="'type-' + idx" class="tag type-tag">
+              {{ type }}<span v-if="idx < sortedEventTypes.length - 1">, </span> </span
             >.
           </div>
-          <div class="tag-group" v-if="event.tags.length > 0">
-            <span v-for="(tag, idx) in event.tags" :key="'tag-' + idx" class="tag custom-tag">
-              {{ tag }}<span v-if="idx < event.tags.length - 1">, </span> </span
+          <div class="tag-group" v-if="sortedTags.length > 0">
+            <span v-for="(tag, idx) in sortedTags" :key="'tag-' + idx" class="tag custom-tag">
+              {{ tag }}<span v-if="idx < sortedTags.length - 1">, </span> </span
             >.
           </div>
           <span
@@ -149,10 +149,19 @@
   // Computed
   const hasTags = computed(() => {
     return (
-      (Array.isArray(props.event.places) && props.event.places.length > 0) ||
-      (Array.isArray(props.event.eventType) && props.event.eventType.length > 0) ||
-      (Array.isArray(props.event.participants) && props.event.participants.length > 0) ||
-      (Array.isArray(props.event.tags) && props.event.tags.length > 0)
+      (Array.isArray(sortedPlaces.value) && sortedPlaces.value.length > 0) ||
+      (Array.isArray(sortedEventTypes.value) && sortedEventTypes.value.length > 0) ||
+      (Array.isArray(sortedParticipants.value) && sortedParticipants.value.length > 0) ||
+      (Array.isArray(sortedTags.value) && sortedTags.value.length > 0)
     )
   })
+
+  const sortAlpha = (arr) => {
+    return [...(arr || [])].sort((a, b) => String(a).localeCompare(String(b)))
+  }
+
+  const sortedParticipants = computed(() => sortAlpha(props.event.participants))
+  const sortedPlaces = computed(() => sortAlpha(props.event.places))
+  const sortedEventTypes = computed(() => sortAlpha(props.event.eventType))
+  const sortedTags = computed(() => sortAlpha(props.event.tags))
 </script>

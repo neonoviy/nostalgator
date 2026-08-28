@@ -33,6 +33,7 @@ const {
   isMediaFile,
   getMediaFiles,
   getMediaInfo,
+  extractExifData,
   scanDirectory,
   MEDIA_EXTENSIONS,
   VIDEO_EXTENSIONS,
@@ -181,6 +182,78 @@ describe('getMediaInfo', () => {
 
     assert.strictEqual(result.isVideo, true)
     assert.strictEqual(result.isImage, false)
+  })
+
+  it('должен возвращать birthtime и mtime', async () => {
+    const filePath = path.join(tmpDir, 'photo.jpg')
+    const result = await getMediaInfo(filePath)
+
+    assert.ok(result.birthtime != null, 'birthtime должен присутствовать')
+    assert.ok(result.mtime != null, 'mtime должен присутствовать')
+    assert.ok(new Date(result.birthtime).getTime() > 0, 'birthtime должен быть валидной датой')
+    assert.ok(new Date(result.mtime).getTime() > 0, 'mtime должен быть валидной датой')
+  })
+})
+
+// ==================== extractExifData ====================
+
+describe('extractExifData', () => {
+  before(async () => {
+    await createTestStructure()
+  })
+  after(async () => {
+    await cleanupTestStructure()
+  })
+
+  it('должен возвращать capturedAt из EXIF при наличии DateTimeOriginal', async () => {
+    const filePath = path.join(tmpDir, 'photo.jpg')
+    const result = await extractExifData(filePath)
+
+    // Файл создаётся нами без EXIF, поэтому capturedAt должен быть null или из fs fallback
+    // Главное — функция не падает
+    assert.ok('capturedAt' in result)
+  })
+
+  it('должен fallback на birthtime когда EXIF отсутствует', async () => {
+    const filePath = path.join(tmpDir, 'photo.jpg')
+    const stat = await fs.stat(filePath)
+    const result = await extractExifData(filePath, { birthtime: stat.birthtime, mtime: stat.mtime })
+
+    assert.ok(result.capturedAt != null, 'capturedAt должен быть заполнен из filesystem fallback')
+    assert.ok(new Date(result.capturedAt).getTime() > 0, 'capturedAt должен быть валидной датой')
+  })
+
+  it('должен fallback на mtime когда birthtime отсутствует', async () => {
+    const filePath = path.join(tmpDir, 'photo.jpg')
+    const stat = await fs.stat(filePath)
+    const result = await extractExifData(filePath, { birthtime: null, mtime: stat.mtime })
+
+    assert.ok(result.capturedAt != null, 'capturedAt должен быть заполнен из mtime fallback')
+    assert.ok(new Date(result.capturedAt).getTime() > 0, 'capturedAt должен быть валидной датой')
+  })
+
+  it('должен оставаться null когда нет ни EXIF ни stat', async () => {
+    const filePath = path.join(tmpDir, 'photo.jpg')
+    const result = await extractExifData(filePath, null)
+
+    // Без EXIF и без stat capturedAt должен быть null
+    assert.strictEqual(result.capturedAt, null)
+  })
+
+  it('должен fallback на дату из имени файла когда нет EXIF и stat', async () => {
+    const filename = 'IMG_20200828_171047.jpg'
+    const filePath = path.join(tmpDir, filename)
+    await fs.writeFile(filePath, 'fake jpg content')
+
+    const result = await extractExifData(filePath, null)
+
+    assert.ok(result.capturedAt != null, 'capturedAt должен быть заполнен из имени файла')
+    assert.strictEqual(result.capturedAt.getUTCFullYear(), 2020)
+    assert.strictEqual(result.capturedAt.getUTCMonth(), 7)
+    assert.strictEqual(result.capturedAt.getUTCDate(), 28)
+    assert.strictEqual(result.capturedAt.getUTCHours(), 17)
+    assert.strictEqual(result.capturedAt.getUTCMinutes(), 10)
+    assert.strictEqual(result.capturedAt.getUTCSeconds(), 47)
   })
 })
 

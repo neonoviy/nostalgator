@@ -243,8 +243,9 @@ describe('ThumbnailService.getThumbnailsForEvent', () => {
 
     const mockPrisma = {
       media: {
-        findMany: async () => [{ id: 1, filename: 'video.mp4', clusterId: null }],
+        findMany: async () => [{ id: 1, filename: 'video.mp4', clusterId: null, capturedAt: new Date('2025-07-28T12:00:00Z') }],
       },
+      face: { findMany: async () => [] },
     }
 
     const result = await svc.getThumbnailsForEvent(1, 2026, undefined, mockPrisma)
@@ -252,6 +253,7 @@ describe('ThumbnailService.getThumbnailsForEvent', () => {
     assert.strictEqual(result.length, 1)
     assert.strictEqual(result[0].filename, 'video.mp4')
     assert.ok(result[0].url.includes('video.mp4.jpg'))
+    assert.deepStrictEqual(result[0].capturedAt, new Date('2025-07-28T12:00:00Z'))
   })
 
   it('должен возвращать миниатюры для изображений без суффикса', async () => {
@@ -262,8 +264,9 @@ describe('ThumbnailService.getThumbnailsForEvent', () => {
 
     const mockPrisma = {
       media: {
-        findMany: async () => [{ id: 1, filename: 'photo.jpg', clusterId: null }],
+        findMany: async () => [{ id: 1, filename: 'photo.jpg', clusterId: null, capturedAt: new Date('2025-07-28T12:00:00Z') }],
       },
+      face: { findMany: async () => [] },
     }
 
     const result = await svc.getThumbnailsForEvent(1, 2026, undefined, mockPrisma)
@@ -272,6 +275,7 @@ describe('ThumbnailService.getThumbnailsForEvent', () => {
     assert.strictEqual(result[0].filename, 'photo.jpg')
     assert.ok(result[0].url.includes('photo.jpg'))
     assert.ok(!result[0].url.includes('.jpg.jpg'))
+    assert.deepStrictEqual(result[0].capturedAt, new Date('2025-07-28T12:00:00Z'))
   })
 
   it('должен игнорировать медиафайлы без миниатюр', async () => {
@@ -279,7 +283,7 @@ describe('ThumbnailService.getThumbnailsForEvent', () => {
 
     const mockPrisma = {
       media: {
-        findMany: async () => [{ id: 1, filename: 'missing.mp4', clusterId: null }],
+        findMany: async () => [{ id: 1, filename: 'missing.mp4', clusterId: null, capturedAt: null }],
       },
     }
 

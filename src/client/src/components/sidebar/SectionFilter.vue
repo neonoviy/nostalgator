@@ -7,6 +7,7 @@
           :name="getItemName(item)"
           :type="type"
           :count="counts[getItemName(item)]"
+          :max-count="maxCount"
           :disabled="counts[getItemName(item)] === 0"
           :selectable="true"
           :selected="selected.includes(getItemName(item))"
@@ -21,6 +22,7 @@
 </template>
 
 <script setup>
+  import { computed } from 'vue'
   import TagBadge from '../ui/TagBadge.vue'
 
   const props = defineProps({
@@ -42,6 +44,11 @@
   const onChange = (name, event) => {
     emit('change', props.filterType, name, event)
   }
+
+  const maxCount = computed(() => {
+    const values = Object.values(props.counts).filter((v) => typeof v === 'number')
+    return values.length > 0 ? Math.max(...values) : 0
+  })
 
   const onContextMenu = (event, type, item) => {
     if (props.hasContextMenu) {

@@ -7,7 +7,7 @@
           v-if="folderTree"
           v-model="selectedFolders"
           :tree="folderTree"
-          :placeholder="$t('scan.selectFolders', 'Select folders')"
+          :placeholder="$t('common.all')"
         />
         <div v-else-if="folderTreeError" class="settings-modal__loading settings-modal__error">
           {{ folderTreeError }}
@@ -177,6 +177,10 @@
       type: String,
       default: null,
     },
+    preSelectedFolders: {
+      type: Array,
+      default: () => [],
+    },
   })
 
   const scanState = inject('scanContext')
@@ -193,17 +197,20 @@
     return t(form, { count })
   }
 
-  const selectedFolders = ref([''])
+  const selectedFolders = ref([])
   const folderTree = ref(null)
   const folderTreeError = ref(null)
 
   watch(
-    () => props.preSelectedFolder,
-    (folder) => {
-      if (folder) {
+    () => [props.preSelectedFolder, props.preSelectedFolders],
+    ([folder, folders]) => {
+      if (folders && folders.length) {
+        selectedFolders.value = [...folders]
+      } else if (folder) {
         selectedFolders.value = [folder]
       }
     },
+    { immediate: true },
   )
 
   const forceFaces = ref(scanState?.forceFaces?.value ?? false)
@@ -254,9 +261,6 @@
       if (!response.ok) throw new Error(t('scan.error.loadFolders', { status: response.status }))
       const result = await response.json()
       folderTree.value = result.data || result
-      if (folderTree.value) {
-        folderTree.value.name = t('common.all')
-      }
     } catch (error) {
       console.error('Failed to load folder tree:', error)
       folderTreeError.value = error.message

@@ -2,7 +2,7 @@
 @use '../../mixins' as *;
 
 .sidebar {
-  width: 300px;
+  width: 400px;
   background-color: var(--bg);
   border-left: 1px solid var(--border-color);
   transition: all $transition-slow;

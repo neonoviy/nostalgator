@@ -67,6 +67,7 @@
       v-if="isAdmin"
       v-model="settingsModal.showSettingsModal.value"
       :pre-selected-folder="settingsModal.preSelectedFolder.value"
+      :pre-selected-folders="settingsModal.preSelectedFolders.value"
       @close="settingsModal.closeSettingsModal()"
     />
   </aside>

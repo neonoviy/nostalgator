@@ -359,6 +359,112 @@ class PlaceRecognitionService {
     )
   }
 
+  async updateMediaCluster(mediaId, oldLat, oldLng, oldClusterId, newLat, newLng) {
+    const numericMediaId = Number(mediaId)
+
+    if (oldClusterId && oldLat != null && oldLng != null) {
+      const oldCluster = await withRetry(
+        () => this.prisma.cluster.findUnique({ where: { id: oldClusterId } }),
+        { logger, maxAttempts: 5, baseDelay: 1000 },
+      )
+
+      if (oldCluster) {
+        const newLatSum = oldCluster.latSum - oldLat
+        const newLngSum = oldCluster.lngSum - oldLng
+        const newCount = oldCluster.mediaCount - 1
+
+        if (newCount <= 0) {
+          await withRetry(
+            () => this.prisma.cluster.delete({ where: { id: oldClusterId } }),
+            { logger, maxAttempts: 5, baseDelay: 1000 },
+          )
+        } else {
+          await withRetry(
+            () =>
+              this.prisma.cluster.update({
+                where: { id: oldClusterId },
+                data: {
+                  latSum: newLatSum,
+                  lngSum: newLngSum,
+                  mediaCount: newCount,
+                  latitude: newLatSum / newCount,
+                  longitude: newLngSum / newCount,
+                },
+              }),
+            { logger, maxAttempts: 5, baseDelay: 1000 },
+          )
+        }
+      }
+    }
+
+    if (newLat != null && newLng != null) {
+      const bounds = this._getCellBounds(newLat, newLng)
+      const cluster = await withRetry(
+        () =>
+          this.prisma.cluster.findFirst({
+            where: {
+              latitude: { gte: bounds.minLat, lt: bounds.maxLat },
+              longitude: { gte: bounds.minLng, lt: bounds.maxLng },
+            },
+          }),
+        { logger, maxAttempts: 5, baseDelay: 1000 },
+      )
+
+      let targetClusterId = null
+      if (cluster) {
+        const updated = await withRetry(
+          () =>
+            this.prisma.cluster.update({
+              where: { id: cluster.id },
+              data: {
+                latSum: cluster.latSum + newLat,
+                lngSum: cluster.lngSum + newLng,
+                mediaCount: cluster.mediaCount + 1,
+                latitude: (cluster.latSum + newLat) / (cluster.mediaCount + 1),
+                longitude: (cluster.lngSum + newLng) / (cluster.mediaCount + 1),
+              },
+            }),
+          { logger, maxAttempts: 5, baseDelay: 1000 },
+        )
+        targetClusterId = updated.id
+      } else {
+        const created = await withRetry(
+          () =>
+            this.prisma.cluster.create({
+              data: {
+                name: `Cluster ${newLat.toFixed(6)}, ${newLng.toFixed(6)}`,
+                latitude: newLat,
+                longitude: newLng,
+                latSum: newLat,
+                lngSum: newLng,
+                mediaCount: 1,
+              },
+            }),
+          { logger, maxAttempts: 5, baseDelay: 1000 },
+        )
+        targetClusterId = created.id
+      }
+
+      await withRetry(
+        () =>
+          this.prisma.media.update({
+            where: { id: numericMediaId },
+            data: { clusterId: targetClusterId },
+          }),
+        { logger, maxAttempts: 5, baseDelay: 1000 },
+      )
+    } else {
+      await withRetry(
+        () =>
+          this.prisma.media.update({
+            where: { id: numericMediaId },
+            data: { clusterId: null },
+          }),
+        { logger, maxAttempts: 5, baseDelay: 1000 },
+      )
+    }
+  }
+
   async _addEventPlaces(eventId, placeIds) {
     if (!placeIds.length) return
     const numericEventId = Number(eventId)

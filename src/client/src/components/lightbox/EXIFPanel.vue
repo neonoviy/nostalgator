@@ -2,28 +2,20 @@
   <Teleport v-if="isSidebarReady" to=".fancybox__sidebar">
     <div class="lightbox-sidebar">
       <div class="sidebar-header">
-        <h3>{{ $t('exif.title') }}</h3>
-        <small v-if="fullPath">{{ fullPath }}</small>
+        <h4 v-if="fullPath">{{ fullPath }}</h4>
       </div>
 
       <!-- Main information -->
       <div class="file-info">
-        <div class="info-row">
-          <span class="label">{{ $t('exif.filename') }}</span>
-          <span class="value" :title="filename">{{ filename }}</span>
+        <div v-if="exif?.imageWidth" class="info-row">
+          <span class="label">{{ $t('exif.dimensions') }}</span>
+          <span class="value">{{ exif.imageWidth }} × {{ exif.imageHeight }}</span>
         </div>
         <div v-if="exif?.fileSize" class="info-row">
           <span class="label">{{ $t('exif.fileSize') }}</span>
           <span class="value">{{ formatFileSize(exif.fileSize) }}</span>
         </div>
-        <div v-if="exif?.imageWidth" class="info-row">
-          <span class="label">{{ $t('exif.dimensions') }}</span>
-          <span class="value">{{ exif.imageWidth }} × {{ exif.imageHeight }}</span>
-        </div>
-        <div v-if="exif?.fileType" class="info-row">
-          <span class="label">{{ $t('exif.fileType') }}</span>
-          <span class="value">{{ exif.fileType }}</span>
-        </div>
+
         <div v-if="exif?.fileCreated" class="info-row">
           <span class="label">{{ $t('exif.created') }}</span>
           <span class="value">{{ formatDate(exif.fileCreated) }}</span>
@@ -100,7 +92,32 @@
           <h4 class="section-title">{{ $t('exif.datetimeSection') }}</h4>
           <div v-if="exif.dateTime" class="info-row">
             <span class="label">{{ $t('exif.dateTime') }}</span>
-            <span class="value">{{ formatDate(exif.dateTime) }}</span>
+            <span v-if="!editingDateTime" class="value">
+              {{ formatDate(exif.dateTime) }}
+              <AppButton
+                v-if="isAdmin && !isReadonly"
+                icon-only
+                size="sm"
+                variant="secondary"
+                @click="startEditDateTime"
+              >
+                <template #icon>✏️</template>
+              </AppButton>
+            </span>
+            <div v-else class="edit-form">
+              <VueDatePicker
+                v-model="editDateTimeValue"
+                :locale="dpLocale"
+                enable-time-picker
+                auto-apply
+                :clearable="false"
+                placeholder=" "
+              />
+              <div class="edit-actions">
+                <AppButton size="sm" variant="primary" @click="saveDateTime">✓</AppButton>
+                <AppButton size="sm" variant="secondary" @click="cancelEditDateTime">×</AppButton>
+              </div>
+            </div>
           </div>
           <div v-if="exif.dateTimeDigitized" class="info-row">
             <span class="label">{{ $t('exif.dateTimeDigitized') }}</span>
@@ -114,18 +131,50 @@
 
         <div v-if="exif.gps || exif.gpsAltitude" class="gps-data">
           <h4 class="section-title">{{ $t('exif.gpsSection') }}</h4>
+          <div v-if="exif.gpsLatitude && exif.gpsLongitude" class="exif-map-wrapper">
+            <Map :location="{ lat: exif.gpsLatitude, lng: exif.gpsLongitude }" />
+          </div>
           <div v-if="exif.gps" class="info-row">
             <span class="label">{{ $t('exif.gps') }}</span>
-            <span class="value">{{ exif.gps }}</span>
+            <span v-if="!editingGps" class="value">
+              {{ exif.gps }}
+              <AppButton
+                v-if="isAdmin && !isReadonly"
+                icon-only
+                size="sm"
+                variant="secondary"
+                @click="startEditGps"
+              >
+                <template #icon>✏️</template>
+              </AppButton>
+            </span>
+            <div v-else class="edit-form">
+              <div class="edit-coords">
+                <input
+                  v-model="editLat"
+                  type="number"
+                  step="any"
+                  class="edit-input"
+                  placeholder="Lat"
+                />
+                <input
+                  v-model="editLng"
+                  type="number"
+                  step="any"
+                  class="edit-input"
+                  placeholder="Lng"
+                />
+              </div>
+              <div class="edit-actions">
+                <AppButton size="sm" variant="primary" @click="saveGps">✓</AppButton>
+                <AppButton size="sm" variant="secondary" @click="cancelEditGps">×</AppButton>
+              </div>
+            </div>
           </div>
           <div v-if="exif.gpsAltitude" class="info-row">
             <span class="label">{{ $t('exif.gpsAltitude') }}</span>
             <span class="value">{{ exif.gpsAltitude }} {{ $t('exif.meters') }}</span>
           </div>
-        </div>
-
-        <div v-if="exif.gpsLatitude && exif.gpsLongitude" class="exif-map-wrapper">
-          <Map :location="{ lat: exif.gpsLatitude, lng: exif.gpsLongitude }" />
         </div>
 
         <div v-if="exif.artist || exif.copyright || exif.software">
@@ -170,10 +219,14 @@
 </template>
 
 <script setup>
-  import { ref, watch, inject, onMounted, onBeforeUnmount, nextTick } from 'vue'
+  import { ref, watch, inject, onMounted, onBeforeUnmount, nextTick, computed } from 'vue'
   import { useI18n } from 'vue-i18n'
   import Map from '../map.vue'
   import Modal from '../ui/Modal.vue'
+  import AppButton from '../ui/AppButton.vue'
+  import { VueDatePicker } from '@vuepic/vue-datepicker'
+  import '@vuepic/vue-datepicker/dist/main.css'
+  import { ru as dateRu, enUS as dateEn } from 'date-fns/locale'
   import { useReadonly } from '../../composables/useReadonly'
   import { Fancybox } from '@fancyapps/ui'
 
@@ -197,6 +250,11 @@
   const isSidebarReady = ref(false)
   const deleting = ref(false)
   const showDeleteConfirm = ref(false)
+  const editingGps = ref(false)
+  const editingDateTime = ref(false)
+  const editLat = ref('')
+  const editLng = ref('')
+  const editDateTimeValue = ref('')
 
   const confirmDelete = async () => {
     if (!props.mediaId || deleting.value) return
@@ -229,6 +287,126 @@
   const deleteMedia = () => {
     if (!props.mediaId || deleting.value) return
     showDeleteConfirm.value = true
+  }
+
+  const startEditGps = () => {
+    if (!exif.value) return
+    editLat.value = String(exif.value.gpsLatitude ?? '')
+    editLng.value = String(exif.value.gpsLongitude ?? '')
+    editingGps.value = true
+  }
+
+  const cancelEditGps = () => {
+    editingGps.value = false
+    editLat.value = ''
+    editLng.value = ''
+  }
+
+  const saveGps = async () => {
+    if (!props.mediaId || !exif.value) return
+    try {
+      const token = auth.token?.value
+      const url = new URL(props.src, window.location.origin)
+      const parts = url.pathname.split('/originals/')
+      if (parts.length < 2) return
+      const pathParts = parts[1].split('/')
+      const year = decodeURIComponent(pathParts[0])
+      const event = encodeURIComponent(decodeURIComponent(pathParts[1]))
+      const encodedFilename = encodeURIComponent(decodeURIComponent(pathParts[2]))
+
+      const response = await fetch(
+        `/api/originals/${year}/${event}/${encodedFilename}/exif`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: token ? `Bearer ${token}` : '',
+          },
+          body: JSON.stringify({
+            latitude: editLat.value,
+            longitude: editLng.value,
+          }),
+        },
+      )
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to save GPS')
+      }
+
+      const responseData = await response.json()
+      const data = responseData.success ? responseData.data : responseData
+      if (data.hasExif) {
+        exif.value = data.data
+      }
+      editingGps.value = false
+      if (exifSidebar?.reloadClusters) {
+        exifSidebar.reloadClusters()
+      }
+    } catch (e) {
+      console.error('Failed to save GPS:', e)
+    }
+  }
+
+  const startEditDateTime = () => {
+    if (!exif.value || !exif.value.dateTime) return
+    const dateStr = exif.value.dateTime
+    const raw = typeof dateStr === 'object' && dateStr.rawValue ? String(dateStr.rawValue) : String(dateStr)
+    const iso = raw.replace(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/, '$1-$2-$3T$4:$5:$6')
+    if (iso) {
+      editDateTimeValue.value = iso
+      editingDateTime.value = true
+    }
+  }
+
+  const cancelEditDateTime = () => {
+    editingDateTime.value = false
+    editDateTimeValue.value = ''
+  }
+
+  const saveDateTime = async () => {
+    if (!props.mediaId || !exif.value) return
+    try {
+      const token = auth.token?.value
+      const url = new URL(props.src, window.location.origin)
+      const parts = url.pathname.split('/originals/')
+      if (parts.length < 2) return
+      const pathParts = parts[1].split('/')
+      const year = decodeURIComponent(pathParts[0])
+      const event = encodeURIComponent(decodeURIComponent(pathParts[1]))
+      const encodedFilename = encodeURIComponent(decodeURIComponent(pathParts[2]))
+
+      const response = await fetch(
+        `/api/originals/${year}/${event}/${encodedFilename}/exif`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: token ? `Bearer ${token}` : '',
+          },
+          body: JSON.stringify({
+            dateTime: editDateTimeValue.value,
+          }),
+        },
+      )
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to save date/time')
+      }
+
+      const responseData = await response.json()
+      const data = responseData.success ? responseData.data : responseData
+      if (data.hasExif) {
+        exif.value = data.data
+      }
+      editingDateTime.value = false
+      if (exifSidebar?.reloadClusters) {
+        exifSidebar.reloadClusters()
+      }
+    } catch (e) {
+      console.error('Failed to save date/time:', e)
+    }
   }
 
   const onSidebarReady = () => {
@@ -341,6 +519,10 @@
       }
     },
   )
+
+  const dpLocale = computed(() => {
+    return locale.value === 'ru' ? dateRu : dateEn
+  })
 
   const formatFileSize = (bytes) => {
     if (!bytes) return ''

@@ -52,6 +52,7 @@ module.exports = (app, ctx) => {
    *             required: [name]
    *             properties:
    *               name: { type: string, minLength: 2, maxLength: 50 }
+   *               canUpload: { type: boolean, description: Whether group members can upload files }
    *     responses:
    *       200: { description: Group created }
    *       400: { description: Validation error }

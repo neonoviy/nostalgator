@@ -96,11 +96,48 @@
       cursor: not-allowed;
     }
   }
+
+  .edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    margin-top: var(--spacing-xs);
+  }
+
+  .edit-coords {
+    display: flex;
+    gap: var(--spacing-xs);
+  }
+
+  .edit-input {
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    width: 100%;
+  }
+
+  .edit-actions {
+    display: flex;
+    gap: var(--spacing-xs);
+    align-items: center;
+  }
+
+  :deep(.vue-date-picker) {
+    width: 100%;
+    font-size: 13px;
+  }
+}
+
+.fancybox__backdrop {
+  background: rgb(0 0 0);
 }
 
 @media screen and (max-width: 720px) {
   /* Перестраиваем сетку в одну колонку */
-  .fancybox__grid {
+  .has-sidebar .fancybox__grid {
     grid-template-columns: 1fr !important;
   }
 
@@ -114,5 +151,13 @@
   /* Показываем сайдбар, только если у главного контейнера есть активный класс */
   .fancybox__container.has-sidebar .fancybox__sidebar {
     display: block !important;
+  }
+
+  .fancybox__carousel.has-absolute-toolbar .fancybox__column.with-sidebar {
+    padding-top: 0;
+  }
+
+  .is-arrow {
+    display: none;
   }
 }

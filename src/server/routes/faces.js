@@ -176,7 +176,7 @@ module.exports = (app, ctx) => {
       const faces = await ctx.prisma.face.findMany({
         where: { mediaId: parseInt(req.params.id) },
         include: {
-          person: { select: { id: true, participant: { select: { name: true } } } },
+          person: { select: { id: true, faceCount: true, participant: { select: { name: true } } } },
         },
         orderBy: { createdAt: 'asc' },
       })
@@ -190,6 +190,7 @@ module.exports = (app, ctx) => {
           confidence: f.confidence,
           personId: f.person?.id || null,
           personName: f.person?.participant?.name || null,
+          photoCount: f.person?.faceCount ?? null,
         })),
       )
     } catch (error) {
@@ -210,7 +211,7 @@ module.exports = (app, ctx) => {
       const faces = await ctx.prisma.face.findMany({
         where: { media: { eventId } },
         include: {
-          person: { select: { id: true, participant: { select: { name: true } } } },
+          person: { select: { id: true, faceCount: true, participant: { select: { name: true } } } },
           media: { select: { id: true } },
         },
       })
@@ -226,6 +227,7 @@ module.exports = (app, ctx) => {
           confidence: f.confidence,
           personId: f.person?.id || null,
           personName: f.person?.participant?.name || null,
+          photoCount: f.person?.faceCount ?? null,
         })
       }
       res.success({ byMedia })
@@ -456,3 +458,251 @@ module.exports = (app, ctx) => {
     },
   )
 }
+
+/**
+ * @openapi
+ * /api/persons:
+ *   get:
+ *     summary: Get all persons
+ *     tags: [Faces]
+ *     responses:
+ *       200:
+ *         description: List of persons
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Person'
+ */
+
+/**
+ * @openapi
+ * /api/persons/{id}:
+ *   get:
+ *     summary: Get person by ID with their faces
+ *     tags: [Faces]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Person with faces
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: integer }
+ *                 name: { type: string, nullable: true }
+ *                 thumbnailPath: { type: string, nullable: true }
+ *                 participantId: { type: 'integer', nullable: true }
+ *                 participantName: { type: string, nullable: true }
+ *                 faces:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: integer }
+ *                       mediaId: { type: integer }
+ *                       x: { type: integer }
+ *                       y: { type: integer }
+ *                       w: { type: integer }
+ *                       h: { type: integer }
+ *                       confidence: { type: number, nullable: true }
+ *                       filename: { type: string }
+ *       404:
+ *         description: Person not found
+ */
+
+/**
+ * @openapi
+ * /api/participants:
+ *   get:
+ *     summary: Get all participants
+ *     tags: [Faces]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: List of participants
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Participant'
+ */
+
+/**
+ * @openapi
+ * /api/persons/{id}/photos:
+ *   get:
+ *     summary: Get all photos containing a person
+ *     tags: [Faces]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of photos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   faceId: { type: integer }
+ *                   mediaId: { type: integer }
+ *                   filename: { type: string }
+ *                   x: { type: integer }
+ *                   y: { type: integer }
+ *                   w: { type: integer }
+ *                   h: { type: integer }
+ *                   eventId: { type: integer }
+ *                   eventTitle: { type: string }
+ *                   folderPath: { type: string }
+ *                   year: { type: integer }
+ */
+
+/**
+ * @openapi
+ * /api/persons/unknown:
+ *   get:
+ *     summary: Get all unknown persons (no participant assigned)
+ *     tags: [Faces]
+ *     responses:
+ *       200:
+ *         description: List of unknown persons
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/UnknownPerson'
+ */
+
+/**
+ * @openapi
+ * /api/media/{id}/faces:
+ *   get:
+ *     summary: Get all faces detected in a media file
+ *     tags: [Faces]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of faces
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Face'
+ */
+
+/**
+ * @openapi
+ * /api/events/{id}/faces:
+ *   get:
+ *     summary: Get all faces detected in an event, grouped by media
+ *     tags: [Faces]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Faces grouped by media ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 byMedia:
+ *                   type: object
+ *                   additionalProperties:
+ *                     type: array
+ *                     items:
+ *                       $ref: '#/components/schemas/Face'
+ *       403:
+ *         description: Access denied
+ */
+
+/**
+ * @openapi
+ * /api/media/{id}/faces/{faceId}/name:
+ *   post:
+ *     summary: Assign a name to a detected face (creates/updates participant)
+ *     tags: [Faces]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: path
+ *         name: faceId
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string, description: Person name to assign }
+ *     responses:
+ *       200:
+ *         description: Face named
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 participantId: { type: integer }
+ *                 faceCount: { type: integer }
+ *                 eventIds: { type: array, items: { type: integer } }
+ */
+
+/**
+ * @openapi
+ * /api/media/{id}/faces/{faceId}/unname:
+ *   post:
+ *     summary: Remove name assignment from a face (admin only)
+ *     tags: [Faces]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: path
+ *         name: faceId
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Face unnamed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 eventIds: { type: array, items: { type: integer } }
+ *                 removedParticipantId: { type: integer, nullable: true }
+ *                 participantDeleted: { type: boolean }
+ *                 removedParticipantName: { type: string, nullable: true }
+ */

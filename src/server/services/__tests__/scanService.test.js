@@ -13,6 +13,7 @@ function createMockEventService() {
       event: {
         update: async (data) => data.data,
         delete: async () => ({}),
+        findFirst: async () => ({}),
       },
     },
   }
@@ -33,6 +34,7 @@ function createMockWebsocketService() {
     notifyWatcherCycleComplete: () => {},
     notifyEventCreated: () => {},
     notifyEventDeleted: () => {},
+    notifyPendingFolders: () => {},
   }
 }
 
@@ -291,7 +293,7 @@ describe('ScanService scanEvent логика', () => {
     delete require.cache[require.resolve('../scanService')]
   })
 
-  it('должен пропускать неизменённое событие', async () => {
+  it('должен перечитывать данные файлов (syncEventMedia) для существующего события при incremental-скане даже без изменения mtime папки', async () => {
     const mockFs = {
       access: async () => {},
       readdir: async () => [],
@@ -308,6 +310,11 @@ describe('ScanService scanEvent логика', () => {
       lastScannedAt: new Date(Date.now() - 1000),
       mediaCount: 5,
     })
+    let syncEventMediaCalled = false
+    eventService.syncEventMedia = async () => {
+      syncEventMediaCalled = true
+      return 5
+    }
 
     delete require.cache[require.resolve('fs')]
     delete require.cache[require.resolve('../scanService')]
@@ -324,6 +331,94 @@ describe('ScanService scanEvent логика', () => {
     const result = await svc.scanEvent(eventPath, () => {}, 'incremental')
 
     assert.strictEqual(result.isNew, false)
+    assert.strictEqual(syncEventMediaCalled, true)
+
+    delete require.cache[require.resolve('../scanService')]
+  })
+
+  it('должен обновлять lastScannedAt при проверке существующего события', async () => {
+    const mockFs = {
+      access: async () => {},
+      readdir: async () => [],
+      stat: async () => ({ isDirectory: () => true, mtimeMs: 500 }),
+      rm: async () => {},
+    }
+
+    const eventService = createMockEventService()
+    eventService.getEventByFolderPath = async () => ({
+      id: 1,
+      folderPath: '2026/01.07 Test',
+      title: 'Test',
+      date: new Date('2026-01-07'),
+      lastScannedAt: new Date(Date.now() - 1000),
+      mediaCount: 5,
+    })
+    let updatedLastScannedAt = null
+    eventService.prisma.event.update = async (data) => {
+      updatedLastScannedAt = data.data.lastScannedAt
+      return data.data
+    }
+
+    delete require.cache[require.resolve('fs')]
+    delete require.cache[require.resolve('../scanService')]
+    require.cache[require.resolve('fs')] = {
+      id: require.resolve('fs'),
+      filename: require.resolve('fs'),
+      loaded: true,
+      exports: { promises: mockFs },
+    }
+
+    const ScanService = require('../scanService')
+    const svc = new ScanService(eventService, '/fake/Originals', createMockThumbnailService(), null)
+    const eventPath = path.join('/fake/Originals', '2026', '01.07 Test')
+    await svc.scanEvent(eventPath, () => {}, 'incremental')
+
+    assert.ok(updatedLastScannedAt instanceof Date)
+
+    delete require.cache[require.resolve('../scanService')]
+  })
+
+  it('должен пропускать существующее событие при onlyNew (старт приложения)', async () => {
+    const mockFs = {
+      access: async () => {},
+      readdir: async () => [],
+      stat: async () => ({ isDirectory: () => true, mtimeMs: 500 }),
+      rm: async () => {},
+    }
+
+    const eventService = createMockEventService()
+    eventService.getEventByFolderPath = async () => ({
+      id: 1,
+      folderPath: '2026/01.07 Test',
+      title: 'Test',
+      date: new Date('2026-01-07'),
+      lastScannedAt: new Date(Date.now() - 1000),
+      mediaCount: 5,
+    })
+    let syncEventMediaCalled = false
+    eventService.syncEventMedia = async () => {
+      syncEventMediaCalled = true
+      return 5
+    }
+
+    delete require.cache[require.resolve('fs')]
+    delete require.cache[require.resolve('../scanService')]
+    require.cache[require.resolve('fs')] = {
+      id: require.resolve('fs'),
+      filename: require.resolve('fs'),
+      loaded: true,
+      exports: { promises: mockFs },
+    }
+
+    const ScanService = require('../scanService')
+    const svc = new ScanService(eventService, '/fake/Originals', createMockThumbnailService(), null)
+    const eventPath = path.join('/fake/Originals', '2026', '01.07 Test')
+    const result = await svc.scanEvent(eventPath, () => {}, 'incremental', null, {}, new Set(), {
+      onlyNew: true,
+    })
+
+    assert.strictEqual(result.isNew, false)
+    assert.strictEqual(syncEventMediaCalled, false)
 
     delete require.cache[require.resolve('../scanService')]
   })

@@ -57,13 +57,37 @@ const swaggerOptions = {
             id: { type: 'integer' },
             folderPath: { type: 'string' },
             year: { type: 'integer' },
-            date: { type: 'string', format: 'date-time' },
+            date: { type: 'string', format: 'date-time', nullable: true },
             title: { type: 'string' },
+            thumbnailPath: { type: 'string', nullable: true },
+            mediaCount: { type: 'integer' },
+            allowedGroupIds: { type: 'array', items: { type: 'integer' } },
             places: { type: 'array', items: { type: 'string' } },
             eventType: { type: 'array', items: { type: 'string' } },
             participants: { type: 'array', items: { type: 'string' } },
             tags: { type: 'array', items: { type: 'string' } },
-            mediaCount: { type: 'integer' },
+            clusters: { type: 'array', items: { type: 'string' } },
+          },
+        },
+        User: {
+          type: 'object',
+          properties: {
+            id: { type: 'integer' },
+            username: { type: 'string' },
+            role: { type: 'string', enum: ['user', 'admin'] },
+            canUpload: { type: 'boolean' },
+            createdAt: { type: 'string', format: 'date-time' },
+            groupIds: { type: 'array', items: { type: 'integer' } },
+          },
+        },
+        Group: {
+          type: 'object',
+          properties: {
+            id: { type: 'integer' },
+            name: { type: 'string' },
+            deleted: { type: 'boolean' },
+            canUpload: { type: 'boolean' },
+            createdAt: { type: 'string', format: 'date-time' },
           },
         },
         Tag: {
@@ -71,6 +95,74 @@ const swaggerOptions = {
           properties: {
             id: { type: 'integer' },
             name: { type: 'string' },
+          },
+        },
+        Place: {
+          type: 'object',
+          properties: {
+            id: { type: 'integer' },
+            name: { type: 'string' },
+            latitude: { type: 'number', nullable: true },
+            longitude: { type: 'number', nullable: true },
+            radius: { type: 'integer', nullable: true },
+            polygon: {
+              type: 'array',
+              nullable: true,
+              items: { type: 'array', items: { type: 'number' } },
+            },
+            count: { type: 'integer', description: 'How many events at this place' },
+          },
+        },
+        Person: {
+          type: 'object',
+          properties: {
+            id: { type: 'integer' },
+            name: { type: 'string', nullable: true },
+            thumbnailPath: { type: 'string', nullable: true },
+            participantId: { type: 'integer', nullable: true },
+            participantName: { type: 'string', nullable: true },
+            photoCount: { type: 'integer' },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        UnknownPerson: {
+          type: 'object',
+          properties: {
+            id: { type: 'integer' },
+            name: { type: 'string', nullable: true },
+            displayName: { type: 'string' },
+            photoCount: { type: 'integer' },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        Participant: {
+          type: 'object',
+          properties: {
+            id: { type: 'integer' },
+            name: { type: 'string' },
+          },
+        },
+        Face: {
+          type: 'object',
+          properties: {
+            id: { type: 'integer' },
+            x: { type: 'integer' },
+            y: { type: 'integer' },
+            w: { type: 'integer' },
+            h: { type: 'integer' },
+            confidence: { type: 'number', nullable: true },
+            personId: { type: 'integer', nullable: true },
+            personName: { type: 'string', nullable: true },
+          },
+        },
+        Thumbnail: {
+          type: 'object',
+          properties: {
+            id: { type: 'integer' },
+            filename: { type: 'string' },
+            url: { type: 'string' },
+            clusterId: { type: 'integer', nullable: true },
+            participants: { type: 'array', items: { type: 'string' } },
           },
         },
         Error: {
@@ -490,7 +582,9 @@ async function initializeApp() {
     isServicesReady = true
     if (websocketService) websocketService.markServerReady()
 
-    // Start background scan (don't block frontend)
+    // Startup setup (don't block frontend).
+    // No automatic scanning: only discover folders present on disk but not yet
+    // scanned, so the admin can be notified and trigger a scan manually.
     ;(async () => {
       try {
         const hasEvents = await eventService.hasEvents()
@@ -498,37 +592,25 @@ async function initializeApp() {
         const importWatchEnabled = settings.importWatchEnabled
         const isReadonly = process.env.ORIGINALS_READONLY === 'true'
 
+        // Discover unscanned folders (read-only, does not scan media).
+        await scanService.refreshPendingFolders()
+
         if (!hasEvents) {
           logger.scan('First launch — waiting for user to start scan from UI')
-        } else {
-          if (watchEnabled) {
-            watcherService.startWatching(ORIGINALS_PATH)
+        } else if (watchEnabled) {
+          // Watcher only detects changes and records pending folders — it does
+          // not auto-scan.
+          watcherService.startWatching(ORIGINALS_PATH)
+        }
 
-            isScanning = true
-            if (websocketService) websocketService.notifyScanProcessChanged('scanning', true)
-            setImmediate(async () => {
-              try {
-                await scanService.scanOriginalsFolder('incremental', (msg) =>
-                  logger.scanDetail(msg),
-                )
-              } catch (err) {
-                logger.error('Background scan failed: ' + err.message)
-              } finally {
-                isScanning = false
-                if (websocketService) websocketService.notifyScanProcessChanged('scanning', false)
-              }
-            })
-          }
-
-          if (importWatchEnabled && !isReadonly) {
-            const IMPORT_PATH = process.env.IMPORT_PATH || './Import'
-            watcherService.startWatchingImport(IMPORT_PATH)
-          } else if (importWatchEnabled && isReadonly) {
-            logger.warn('Read-only mode: import watcher disabled')
-          }
+        if (importWatchEnabled && !isReadonly) {
+          const IMPORT_PATH = process.env.IMPORT_PATH || './Import'
+          watcherService.startWatchingImport(IMPORT_PATH)
+        } else if (importWatchEnabled && isReadonly) {
+          logger.warn('Read-only mode: import watcher disabled')
         }
       } catch (err) {
-        logger.error('Background scan setup failed: ' + err.message)
+        logger.error('Startup setup failed: ' + err.message)
       }
     })()
 

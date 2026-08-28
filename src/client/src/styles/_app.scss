@@ -29,9 +29,15 @@
   position: fixed;
   top: -40px;
   width: calc(100% - 300px);
-  z-index: 10;
+  z-index: 2;
   text-align: center;
   padding-top: var(--spacing-sm);
+}
+
+@media screen and (max-width: 720px) {
+  .scroll-to-top-wrapper {
+    width: 100%;
+  }
 }
 
 .scroll-to-top-wrapper:has(.scroll-to-top--visible) {

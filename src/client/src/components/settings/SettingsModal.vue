@@ -13,6 +13,7 @@
       <ScanSettingsTab
         v-if="activeTab === 'scan'"
         :pre-selected-folder="preSelectedFolder"
+        :pre-selected-folders="preSelectedFolders"
         @close="$emit('update:modelValue', false)"
       />
       <UsersTab
@@ -69,6 +70,10 @@
     preSelectedFolder: {
       type: String,
       default: null,
+    },
+    preSelectedFolders: {
+      type: Array,
+      default: () => [],
     },
   })
 

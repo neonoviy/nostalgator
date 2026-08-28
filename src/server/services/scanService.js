@@ -1,6 +1,6 @@
 const fs = require('fs').promises
 const path = require('path')
-const { normalizePath, getMediaFiles } = require('../utils/fileUtils')
+const { normalizePath, getMediaFiles, isMediaFile } = require('../utils/fileUtils')
 const { parseEventFolderName, isYearFolder, buildEventPath } = require('../utils/eventPathUtils')
 const logger = require('../utils/logger')
 const { withRetry } = require('../utils/retry')
@@ -28,6 +28,8 @@ class ScanService {
     this.autodetectFaces =
       process.env.AUTODETECT_FACES === 'true' || process.env.AUTODETECT_FACES === undefined
     this.autodetectPlaces = process.env.AUTODETECT_PLACES !== 'false'
+    // Relative folder paths (year/event) present on disk but not yet scanned.
+    this.pendingNewFolders = []
   }
 
   updateSettings({ autodetectFaces, autodetectPlaces }) {
@@ -48,6 +50,7 @@ class ScanService {
     onLog = null,
     selectedFolders = [],
     forceFlags = {},
+    options = {},
   ) {
     const startTime = Date.now()
     const log = onLog || (() => {})
@@ -122,7 +125,7 @@ class ScanService {
       let eventsAdded = 0
 
       for (const year of yearsToScan) {
-        const result = await this.scanYear(year, log, mode, selectedEventPaths, forceFlags)
+        const result = await this.scanYear(year, log, mode, selectedEventPaths, forceFlags, options)
         eventsScanned += result.scanned
         eventsAdded += result.added
       }
@@ -205,6 +208,7 @@ class ScanService {
     mode = 'incremental',
     selectedEventPaths = new Set(),
     forceFlags = {},
+    options = {},
   ) {
     const yearPath = path.join(this.originalsPath, year)
     let scanned = 0
@@ -229,6 +233,7 @@ class ScanService {
             null,
             forceFlags,
             selectedEventPaths,
+            options,
           )
           if (result) {
             scanned++
@@ -260,6 +265,7 @@ class ScanService {
     uploadedById = null,
     forceFlags = {},
     selectedEventPaths = new Set(),
+    options = {},
   ) {
     const parts = eventPath.split(path.sep)
     const event = parts[parts.length - 1]
@@ -274,80 +280,38 @@ class ScanService {
         const isSelected = selectedEventPaths && selectedEventPaths.has(relativePath)
         const forceFlagsForEvent = { forceFaces, forcePlaces, forceThumbs }
 
-        if (existingEvent && existingEvent.lastScannedAt) {
-          const mtimeMs = eventStat.mtimeMs
-          const lastScannedMs = new Date(existingEvent.lastScannedAt).getTime()
-
-          if (!isSelected && lastScannedMs >= mtimeMs) {
-            if (mode === 'full') {
-              const thumbMediaFiles = await getMediaFiles(eventPath)
-              if (forceThumbs) {
-                for (const f of thumbMediaFiles) {
-                  const eventThumbnailsPath = path.join(
-                    this.thumbnailService?.thumbnailsPath || '',
-                    year.toString(),
-                    existingEvent.id.toString(),
-                  )
-                  const outputFile = path.join(
-                    eventThumbnailsPath,
-                    f.isVideo ? f.filename + '.jpg' : f.filename,
-                  )
-                  try {
-                    await fs.unlink(outputFile)
-                  } catch (err) {
-                    /* ignore */
-                  }
-                }
-              }
-              for (const f of thumbMediaFiles) {
-                this.thumbnailService?.queueGeneration({
-                  eventId: existingEvent.id,
-                  year: parseInt(year),
-                  folderPath: relativePath,
-                  filename: f.filename,
-                  isVideo: f.isVideo,
-                  ...(forceThumbs ? { force: true } : {}),
-                })
-              }
-              logger.thumb(`THUMB ${relativePath}: ${thumbMediaFiles.length} files`)
-              await this.eventService.syncEventMedia(existingEvent.id, relativePath)
-              if (this.placeRecognitionService && (forcePlaces || this.autodetectPlaces)) {
-                this.placeRecognitionService.queueGeneration({
-                  id: existingEvent.id,
-                  year: parseInt(year),
-                  folderPath: relativePath,
-                  isFirstScan: false,
-                  mode,
-                  ...(forcePlaces ? { force: true } : {}),
-                })
-              }
-              if (this.faceRecognitionService && (forceFaces || this.autodetectFaces)) {
-                this.faceRecognitionService.queueGeneration({
-                  id: existingEvent.id,
-                  folderPath: relativePath,
-                  ...(forceFaces ? { force: true } : {}),
-                })
-              }
-            }
+        if (existingEvent) {
+          // При старте приложения (originalsWatchEnabled) достаточно подхватить
+          // только папки, появившиеся пока приложение не работало. Существующие
+          // события не пересканируем.
+          if (options.onlyNew) {
             return { isNew: false }
           }
 
           const mediaFiles = await getMediaFiles(eventPath)
-          const currentMediaCount = mediaFiles.length
+          const folderChanged =
+            isSelected || new Date(existingEvent.lastScannedAt).getTime() < eventStat.mtimeMs
+          const countChanged = existingEvent.mediaCount !== mediaFiles.length
 
-          if (existingEvent.mediaCount !== currentMediaCount || isSelected) {
-            await withRetry(
-              () => this.eventService.syncEventMedia(existingEvent.id, relativePath, uploadedById),
-              { logger, maxAttempts: 3, baseDelay: 200 },
-            )
-            const eventForThumbs = await this.eventService.getEventByFolderPath(relativePath)
+          // (1) ВСЕГДА перечитываем данные файлов (capturedAt/GPS/размеры/длительность)
+          // при сканировании события, даже если mtime папки не менялся — иначе
+          // in-place правка EXIF (изменение даты съёмки и т.п.) не попадёт в БД.
+          await withRetry(
+            () => this.eventService.syncEventMedia(existingEvent.id, relativePath, uploadedById),
+            { logger, maxAttempts: 3, baseDelay: 200 },
+          )
+
+          // (2) Тяжёлые очереди (превью/faces/places) перезапускаем только при
+          // структурном изменении, явном выборе или полном скане.
+          if (folderChanged || countChanged || isSelected || mode === 'full') {
+            const eventForQueues = await this.eventService.getEventByFolderPath(relativePath)
             const thumbMediaFiles = await getMediaFiles(eventPath)
             if (forceThumbs) {
               for (const f of thumbMediaFiles) {
                 const eventThumbnailsPath = path.join(
                   this.thumbnailService?.thumbnailsPath || '',
                   year.toString(),
-                  eventForThumbs.id.toString(),
+                  eventForQueues.id.toString(),
                 )
                 const outputFile = path.join(
                   eventThumbnailsPath,
@@ -360,7 +324,7 @@ class ScanService {
             }
             for (const f of thumbMediaFiles) {
               this.thumbnailService?.queueGeneration({
-                eventId: eventForThumbs.id,
+                eventId: eventForQueues.id,
                 year: parseInt(year),
                 folderPath: relativePath,
                 filename: f.filename,
@@ -371,7 +335,7 @@ class ScanService {
             logger.thumb(`THUMB ${relativePath}: ${thumbMediaFiles.length} files`)
             if (this.placeRecognitionService && (forcePlaces || this.autodetectPlaces)) {
               this.placeRecognitionService.queueGeneration({
-                id: eventForThumbs.id,
+                id: eventForQueues.id,
                 year: parseInt(year),
                 folderPath: relativePath,
                 isFirstScan: false,
@@ -381,63 +345,19 @@ class ScanService {
             }
             if (this.faceRecognitionService && (forceFaces || this.autodetectFaces)) {
               this.faceRecognitionService.queueGeneration({
-                id: eventForThumbs.id,
+                id: eventForQueues.id,
                 folderPath: relativePath,
                 ...(forceFaces ? { force: true } : {}),
               })
             }
-          } else {
-            if (mode === 'full') {
-              const thumbMediaFiles = await getMediaFiles(eventPath)
-              if (forceThumbs) {
-                for (const f of thumbMediaFiles) {
-                  const eventThumbnailsPath = path.join(
-                    this.thumbnailService?.thumbnailsPath || '',
-                    year.toString(),
-                    existingEvent.id.toString(),
-                  )
-                  const outputFile = path.join(
-                    eventThumbnailsPath,
-                    f.isVideo ? f.filename + '.jpg' : f.filename,
-                  )
-                  try {
-                    await fs.unlink(outputFile)
-                  } catch (err) {
-                    /* ignore */
-                  }
-                }
-              }
-              for (const f of thumbMediaFiles) {
-                this.thumbnailService?.queueGeneration({
-                  eventId: existingEvent.id,
-                  year: parseInt(year),
-                  folderPath: relativePath,
-                  filename: f.filename,
-                  isVideo: f.isVideo,
-                  ...(forceThumbs ? { force: true } : {}),
-                })
-              }
-              logger.thumb(`THUMB ${relativePath}: ${thumbMediaFiles.length} files`)
-              await this.eventService.syncEventMedia(existingEvent.id, relativePath, uploadedById)
-              if (this.placeRecognitionService && (forcePlaces || this.autodetectPlaces)) {
-                this.placeRecognitionService.queueGeneration({
-                  id: existingEvent.id,
-                  year: parseInt(year),
-                  folderPath: relativePath,
-                  isFirstScan: false,
-                  mode,
-                  ...(forcePlaces ? { force: true } : {}),
-                })
-              }
-              if (this.faceRecognitionService && (forceFaces || this.autodetectFaces)) {
-                this.faceRecognitionService.queueGeneration({
-                  id: existingEvent.id,
-                  folderPath: relativePath,
-                  ...(forceFaces ? { force: true } : {}),
-                })
-              }
-            }
           }
+
+          // (3) Фиксируем время фактической проверки события.
+          await this.eventService.prisma.event.update({
+            where: { id: existingEvent.id },
+            data: { lastScannedAt: new Date() },
+          })
+
           return { isNew: false }
         } else {
           const parsed = parseEventFolderName(event, year)
@@ -510,6 +430,7 @@ class ScanService {
                 ...(forceFaces ? { force: true } : {}),
               })
             }
+            this.removePendingFolders([relativePath])
           }
           return { isNew: true }
         }
@@ -593,6 +514,7 @@ class ScanService {
           : null
         if (placePromise) await placePromise
         if (facePromise) await facePromise
+        this.removePendingFolders([relativePath])
         if (this.websocketService) {
           this.websocketService.notifyEventCreated(result)
           this.websocketService.notifyWatcherCycleComplete()
@@ -632,6 +554,118 @@ class ScanService {
 
       await this.eventService.prisma.event.delete({ where: { id: event.id } })
       if (this.websocketService) this.websocketService.notifyEventDeleted(event.id)
+    }
+  }
+
+  // ==================== Pending (unscanned) folders ====================
+
+  /**
+   * Recursively collect relative folder paths that directly contain media files.
+   * Returns paths like "2026/05.27 Name".
+   * @param {string} dir
+   * @param {string} rel
+   * @returns {Promise<string[]>}
+   */
+  async _collectDiskEventFolders(dir, rel = '') {
+    let entries
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true })
+    } catch (_err) {
+      return []
+    }
+
+    const result = []
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const childRel = rel ? `${rel}/${entry.name}` : entry.name
+      const childPath = path.join(dir, entry.name)
+      let hasMedia
+      try {
+        const sub = await fs.readdir(childPath)
+        hasMedia = sub.some((f) => isMediaFile(f))
+      } catch (_err) {
+        hasMedia = false
+      }
+      if (hasMedia) {
+        result.push(childRel)
+      } else {
+        // No media here — descend (e.g. year/event or deeper nesting)
+        result.push(...(await this._collectDiskEventFolders(childPath, childRel)))
+      }
+    }
+    return result
+  }
+
+  /**
+   * Walk the Originals tree and return folders present on disk but missing
+   * from the Event table. Read-only — does NOT scan media.
+   * @returns {Promise<string[]>}
+   */
+  async discoverNewFolders() {
+    const diskFolders = await this._collectDiskEventFolders(this.originalsPath)
+    const existing = new Set(
+      (
+        await this.eventService.prisma.event.findMany({
+          select: { folderPath: true },
+        })
+      ).map((e) => e.folderPath),
+    )
+    return diskFolders.filter((f) => !existing.has(f))
+  }
+
+  /**
+   * Recompute the list of pending new folders (disk vs DB) and notify clients.
+   * @returns {Promise<string[]>}
+   */
+  async refreshPendingFolders() {
+    try {
+      this.pendingNewFolders = await this.discoverNewFolders()
+    } catch (err) {
+      logger.error('Failed to discover new folders', err)
+      this.pendingNewFolders = []
+    }
+    this._notifyPendingFolders()
+    return this.pendingNewFolders
+  }
+
+  /**
+   * Record a single folder (relative path) as pending and notify clients.
+   * @param {string} relativePath
+   */
+  addPendingFolder(relativePath) {
+    if (!relativePath) return
+    const norm = normalizePath(relativePath)
+    if (!this.pendingNewFolders.includes(norm)) {
+      this.pendingNewFolders.push(norm)
+      this._notifyPendingFolders()
+    }
+  }
+
+  /**
+   * Remove the given relative paths from the pending list (e.g. after a scan).
+   * @param {string[]} paths
+   */
+  removePendingFolders(paths) {
+    if (!paths || paths.length === 0) return
+    const set = new Set(paths.map((p) => normalizePath(p)))
+    this.pendingNewFolders = this.pendingNewFolders.filter((p) => !set.has(p))
+    this._notifyPendingFolders()
+  }
+
+  /** Clear all pending folders. */
+  clearPendingFolders() {
+    this.pendingNewFolders = []
+    this._notifyPendingFolders()
+  }
+
+  /** @returns {string[]} */
+  getPendingFolders() {
+    return [...this.pendingNewFolders]
+  }
+
+  _notifyPendingFolders() {
+    if (this.websocketService) {
+      this.websocketService.notifyPendingFolders([...this.pendingNewFolders])
     }
   }
 }

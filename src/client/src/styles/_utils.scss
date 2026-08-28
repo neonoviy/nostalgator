@@ -3,10 +3,12 @@
 
 html,
 body {
+  min-height: 100dvh;
   height: 100%;
   margin: 0;
   background-color: var(--bg-low);
   color: var(--color);
+  overscroll-behavior-y: none;
 }
 
 .container {

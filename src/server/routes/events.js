@@ -299,7 +299,114 @@ module.exports = (app, ctx) => {
     },
   )
 
-  // GET /api/originals/:year/:event/:filename/exif
+  // POST /api/originals/:year/:event/:filename/exif
+  app.post(
+    '/api/originals/:year/:event/:filename/exif',
+    ctx.checkServicesReady,
+    ctx.requireAdmin,
+    validateExifPath,
+    async (req, res) => {
+      try {
+        const { year, event, filename } = req.params
+        const decodedFilename = decodeURIComponent(filename)
+        const decodedEvent = decodeURIComponent(event)
+        const filePath = path.join(ctx.ORIGINALS_PATH, year, decodedEvent, decodedFilename)
+
+        const normalizedPath = path.normalize(filePath)
+
+        if (!normalizedPath.startsWith(path.normalize(ctx.ORIGINALS_PATH))) {
+          return res.error(ERROR_CODES.FORBIDDEN, 'Access denied', 403)
+        }
+
+        try {
+          await fs.access(normalizedPath)
+        } catch (err) {
+          logger.warn(`EXIF file not found: path=${normalizedPath}, err=${err.message}`)
+          return res.error(ERROR_CODES.NOT_FOUND, 'File not found', 404)
+        }
+
+        const body = req.body || {}
+        const tags = {}
+
+        if (body.latitude != null && body.longitude != null) {
+          tags.GPSLatitude = Number(body.latitude)
+          tags.GPSLongitude = Number(body.longitude)
+          tags.GPSLatitudeRef = Number(body.latitude) >= 0 ? 'N' : 'S'
+          tags.GPSLongitudeRef = Number(body.longitude) >= 0 ? 'E' : 'W'
+        }
+
+        if (body.dateTime) {
+          tags.DateTimeOriginal = String(body.dateTime)
+        }
+
+        if (Object.keys(tags).length === 0) {
+          return res.error(ERROR_CODES.VALIDATION_ERROR, 'No tags to update', 400)
+        }
+
+        await ctx.exifService.writeExif(normalizedPath, tags)
+
+        if (ctx.watcherService) {
+          ctx.watcherService.suppressPath(normalizedPath, 5000)
+        }
+
+        const updatedExif = await ctx.exifService.getExif(normalizedPath)
+
+        const folderPath = `${year}/${decodedEvent}`
+        const eventRecord = await ctx.prisma.event.findUnique({
+          where: { folderPath },
+          select: { id: true },
+        })
+
+        if (eventRecord) {
+          const media = await ctx.prisma.media.findFirst({
+            where: { eventId: eventRecord.id, filename: decodedFilename },
+            select: { id: true, latitude: true, longitude: true, clusterId: true },
+          })
+
+          if (media) {
+            let capturedAt = body.dateTime ? new Date(body.dateTime) : null
+            if (capturedAt && isNaN(capturedAt.getTime())) capturedAt = null
+            const newLat = body.latitude != null && body.longitude != null ? Number(body.latitude) : null
+            const newLng = body.latitude != null && body.longitude != null ? Number(body.longitude) : null
+            const gpsChanged = media.latitude !== newLat || media.longitude !== newLng
+
+            await ctx.prisma.media.update({
+              where: { id: media.id },
+              data: {
+                capturedAt: capturedAt || media.capturedAt,
+                latitude: newLat,
+                longitude: newLng,
+              },
+            })
+
+            if (gpsChanged && ctx.placeRecognitionService) {
+              try {
+                await ctx.placeRecognitionService.updateMediaCluster(
+                  media.id,
+                  media.latitude,
+                  media.longitude,
+                  media.clusterId,
+                  newLat,
+                  newLng,
+                )
+              } catch (clusterError) {
+                logger.error('Failed to update media cluster after EXIF edit', clusterError)
+              }
+            }
+          }
+        }
+
+        if (ctx.websocketService) {
+          ctx.websocketService.notifyEventsChanged('user')
+        }
+
+        res.success({ hasExif: !!updatedExif, data: updatedExif, filename: decodedFilename })
+      } catch (error) {
+        logger.error('Failed to update EXIF', error)
+        res.error(ERROR_CODES.INTERNAL_ERROR, error.message)
+      }
+    },
+  )
   app.get(
     '/api/originals/:year/:event/:filename/exif',
     ctx.checkServicesReady,
@@ -361,12 +468,13 @@ module.exports = (app, ctx) => {
  * @openapi
  * /api/events:
  *   get:
- *     summary: List of events with pagination and filters
+ *     summary: List of events with cursor pagination and filters
  *     tags: [Events]
  *     parameters:
  *       - in: query
- *         name: offset
- *         schema: { type: integer, default: 0 }
+ *         name: cursor
+ *         schema: { type: string }
+ *         description: Base64-encoded cursor for pagination
  *       - in: query
  *         name: limit
  *         schema: { type: integer, default: 5 }
@@ -380,13 +488,19 @@ module.exports = (app, ctx) => {
  *         description: Search by name
  *     responses:
  *       200:
- *         description: Array of events
+ *         description: Paginated list of events
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Event'
+ *               type: object
+ *               properties:
+ *                 events:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Event'
+ *                 nextCursor:
+ *                   type: string
+ *                   nullable: true
  */
 
 /**
@@ -410,7 +524,7 @@ module.exports = (app, ctx) => {
  *       404:
  *         description: Not found
  *   delete:
- *     summary: Delete event from DB
+ *     summary: Delete event (with thumbnails, optionally originals)
  *     tags: [Events]
  *     security:
  *       - BearerAuth: []
@@ -419,6 +533,13 @@ module.exports = (app, ctx) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               deleteOriginals: { type: boolean, default: false, description: Also delete original media files }
  *     responses:
  *       200:
  *         description: Event deleted
@@ -517,4 +638,120 @@ module.exports = (app, ctx) => {
  *     responses:
  *       200:
  *         description: List of thumbnails
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Thumbnail'
+ */
+
+/**
+ * @openapi
+ * /api/events/has-events:
+ *   get:
+ *     summary: Check if any events exist in the database
+ *     tags: [Events]
+ *     responses:
+ *       200:
+ *         description: Whether events exist
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 hasEvents: { type: boolean }
+ */
+
+/**
+ * @openapi
+ * /api/events/{id}/check-path:
+ *   get:
+ *     summary: Check if event folder exists on disk (admin only)
+ *     tags: [Events]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Whether the folder exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 exists: { type: boolean }
+ */
+
+/**
+ * @openapi
+ * /api/originals/{year}/{event}/{filename}/exif:
+ *   get:
+ *     summary: Get EXIF data for a media file
+ *     tags: [Events]
+ *     parameters:
+ *       - in: path
+ *         name: year
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: event
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: filename
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: EXIF data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 hasExif: { type: boolean }
+ *                 data: { type: object, nullable: true, description: EXIF data object }
+ *                 filename: { type: string }
+ *       404:
+ *         description: File not found
+ */
+
+/**
+ * @openapi
+ * /api/media/{id}:
+ *   delete:
+ *     summary: Delete a media file (admin only)
+ *     tags: [Events]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               deleteOriginals: { type: boolean, default: false, description: Also delete original file }
+ *     responses:
+ *       200:
+ *         description: Media deleted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 deleted: { type: boolean }
+ *       403:
+ *         description: Read-only mode
+ *       404:
+ *         description: Media not found
  */

@@ -753,7 +753,7 @@
     if (!folderPath || !settingsModal) return
     emit('close')
     emit('update:modelValue', false)
-    settingsModal.preSelectedFolder.value = folderPath
+    settingsModal.preSelectedFolders.value = [folderPath]
     settingsModal.openSettingsModal('scan')
   }
 

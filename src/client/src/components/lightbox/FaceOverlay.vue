@@ -11,8 +11,10 @@
           <template v-if="face.personName && activePopupFaceId !== face.id">
             <span class="face-label named">{{ face.personName }}</span>
           </template>
-          <span v-if="!face.personName && activePopupFaceId !== face.id" class="face-label unnamed"
-            >?</span
+          <span
+            v-if="!face.personName && activePopupFaceId !== face.id"
+            class="face-label unnamed"
+            >{{ face.photoCount }}</span
           >
         </div>
       </template>
@@ -34,6 +36,7 @@
     <template v-else>
       <VueSelect
         class="face-popup__select"
+        :calculate-position="calculatePosition"
         :model-value="activePopupFace?.personName || ''"
         :options="participantNames"
         :no-drop="!participantNames.length"
@@ -43,7 +46,7 @@
         :auto-focus="true"
         :placeholder="t('face.unknown')"
         :search-placeholder="t('face.selectParticipant')"
-         no-options-text="{{ t('face.noParticipants') }}"
+        no-options-text="{{ t('face.noParticipants') }}"
         @update:model-value="onModelChange(activePopupFaceId, $event)"
         @search="onSearch"
       />
@@ -278,7 +281,7 @@
         height: '100px',
         top: '0px',
         left: '0px',
-        border: '2px solid lime',
+        // border: '2px solid lime',
       }
     }
     const naturalW = r.naturalWidth || r.width || 1
@@ -322,7 +325,11 @@
   }
 
   const faceClass = (face) => {
-    return face.personName ? 'named' : 'unnamed'
+    const classes = []
+    if (face.personName) classes.push('named')
+    else classes.push('unnamed')
+    // if (face.photoCount != null && face.photoCount <= 4) classes.push('opacity-50')
+    return classes.join(' ')
   }
 
   const togglePopup = (face, event) => {
@@ -336,6 +343,9 @@
     }
     popupAnchorEl.value = event?.target?.closest?.('.face-rectangle') || null
     activePopupFaceId.value = face.id
+    nextTick(() => {
+      popupRef.value?.querySelector('.vs__search')?.focus()
+    })
   }
 
   const closePopup = () => {
@@ -370,18 +380,10 @@
 
     let top, left
 
-    const spaceAbove = anchorRect.top
-    const spaceBelow = viewportH - anchorRect.bottom
-
-    if (spaceAbove >= popupHeight + gap + arrowSize || spaceAbove >= spaceBelow) {
-      top = anchorRect.top - popupHeight - gap - arrowSize
-    } else {
-      top = anchorRect.bottom + gap + arrowSize
-    }
-
+    top = anchorRect.bottom + gap + arrowSize
     left = anchorRect.left + anchorRect.width / 2 - popupWidth / 2
     left = Math.max(8, Math.min(left, viewportW - popupWidth - 8))
-    top = Math.max(8, Math.min(top, viewportH - popupHeight - 8))
+    top = Math.min(top, viewportH - popupHeight - 8)
 
     return {
       top: top + 'px',
@@ -393,18 +395,6 @@
   const popupArrowClass = computed(() => {
     if (activePopupFaceId.value === null || !popupAnchorEl.value) return ''
 
-    const anchorRect = popupAnchorEl.value.getBoundingClientRect()
-    const popupHeight = 44
-    const gap = 4
-    const arrowSize = 6
-    const viewportH = window.innerHeight
-
-    const spaceAbove = anchorRect.top
-    const spaceBelow = viewportH - anchorRect.bottom
-
-    if (spaceAbove >= popupHeight + gap + arrowSize || spaceAbove >= spaceBelow) {
-      return 'face-popup__arrow--bottom'
-    }
     return 'face-popup__arrow--top'
   })
 
@@ -538,6 +528,11 @@
   }
   .face-popup__select {
     width: 180px;
+  }
+
+  .face-popup .vs__dropdown-menu {
+    max-height: 240px;
+    overflow-y: auto;
   }
   .face-popup__spinner {
     display: flex;
