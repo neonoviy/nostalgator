@@ -22,7 +22,7 @@ class FaceRecognitionService {
     this.CHUNK_SIZE = parseInt(process.env.FACE_CHUNK_SIZE || '200', 10)
     this.CHUNK_TIMEOUT = parseInt(process.env.FACE_CHUNK_TIMEOUT || '600', 10) * 1000
     this.RETRY_ATTEMPTS = parseInt(process.env.FACE_RETRY_ATTEMPTS || '1', 10)
-    this.FACE_MATCH_THRESHOLD = parseFloat(process.env.FACE_MATCH_THRESHOLD || '0.6')
+    this.FACE_MATCH_THRESHOLD = parseFloat(process.env.FACE_MATCH_THRESHOLD || '0.55')
     this.MAX_STDOUT = 50 * 1024 * 1024
     // Authoritative GPU status as reported by face_worker.py on stderr
     // ("[GPU] onnxruntime ..." / "[CPU] onnxruntime ..."), captured per chunk and

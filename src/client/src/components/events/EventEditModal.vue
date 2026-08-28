@@ -753,8 +753,7 @@
     if (!folderPath || !settingsModal) return
     emit('close')
     emit('update:modelValue', false)
-    settingsModal.preSelectedFolders.value = [folderPath]
-    settingsModal.openSettingsModal('scan')
+    settingsModal.openSettingsModal('scan', { folders: [folderPath] })
   }
 
   const deleteEvent = () => {

@@ -1,5 +1,12 @@
 <template>
-  <div class="dropdown" :class="[{ 'dropdown--open': isOpen }, `dropdown--${placement}`]">
+  <div
+    class="dropdown"
+    :class="[
+      { 'dropdown--open': isOpen },
+      `dropdown--${placement}`,
+      className,
+    ]"
+  >
     <!-- Button -->
     <button
       ref="buttonRef"
@@ -85,6 +92,10 @@
       type: String,
       default: '▼',
     },
+    class: {
+      type: String,
+      default: '',
+    },
   })
 
   const emit = defineEmits(['update:modelValue', 'open', 'close'])
@@ -93,6 +104,8 @@
   const buttonRef = ref(null)
   const contentRef = ref(null)
   const contentPosition = ref({})
+
+  const className = computed(() => props.class)
 
   // Position content
   const updatePosition = () => {

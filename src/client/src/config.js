@@ -15,7 +15,7 @@ const CONFIG = Object.freeze({
   // Event pagination
   // ============================================
   /** Number of events loaded initially per year */
-  EVENTS_PER_PAGE: 5,
+  EVENTS_PER_PAGE: 50,
 
   // ============================================
   // Thumbnails

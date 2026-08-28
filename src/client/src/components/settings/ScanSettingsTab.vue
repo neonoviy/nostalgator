@@ -100,43 +100,32 @@
         </small>
       </div>
     </div>
-
-    <div class="settings-modal__content">
-      <div class="mb-md">
-        <label>{{ $t('scan.language') }}</label>
-        <LanguageSwitcher />
-      </div>
-      <div>
-        <label>{{ $t('scan.theme') }}</label>
-        <DarkmodeMenu />
-      </div>
-    </div>
   </div>
   <div class="settings-modal__layout">
     <div class="settings-modal__content pt-md">
       <div class="settings-modal__stat">
         <div class="stat">
-          <h1>{{ scanState.stats.value.events }}</h1>
+          <h1>{{ formatNumber(scanState.stats.value.events) }}</h1>
           <h2>{{ pluralizeStats('events', scanState.stats.value.events) }}</h2>
           <small
-            >{{ scanState.stats.value.media }}
+            >{{ formatNumber(scanState.stats.value.media) }}
             {{ pluralizeStats('media', scanState.stats.value.media) }}</small
           >
         </div>
         <div class="stat">
-          <h1>{{ scanState.stats.value.places }}</h1>
+          <h1>{{ formatNumber(scanState.stats.value.places) }}</h1>
           <h2>{{ pluralizeStats('places', scanState.stats.value.places) }}</h2>
           <small
-            >{{ scanState.stats.value.clusters }}
+            >{{ formatNumber(scanState.stats.value.clusters) }}
             {{ pluralizeStats('clusters', scanState.stats.value.clusters) }}
             <sup v-tooltip="$t('scan.clusterTooltip')">?</sup></small
           >
         </div>
         <div class="stat">
-          <h1>{{ scanState.stats.value.persons }}</h1>
+          <h1>{{ formatNumber(scanState.stats.value.persons) }}</h1>
           <h2>{{ pluralizeStats('persons', scanState.stats.value.persons) }}</h2>
           <small
-            >{{ $t('common.and') }} {{ scanState.stats.value.faces }}
+            >{{ $t('common.and') }} {{ formatNumber(scanState.stats.value.faces) }}
             {{ pluralizeStats('faces', scanState.stats.value.faces) }}</small
           >
         </div>
@@ -160,10 +149,9 @@
   import AppButton from '../ui/AppButton.vue'
   import AppCheckbox from '../ui/AppCheckbox.vue'
   import FolderTreeSelect from '../ui/FolderTree/FolderTreeSelect.vue'
-  import DarkmodeMenu from '../ui/DarkmodeMenu.vue'
-  import LanguageSwitcher from '../ui/LanguageSwitcher.vue'
   import { calculatePosition } from '@/composables/useVueSelectPosition'
   import { usePluralize } from '@/composables/usePluralize'
+  import { useFormatNumber } from '@/composables/useFormatNumber'
   import { APP_VERSION } from '@/config.js'
   import VueSelect from 'vue-select'
   import 'vue-select/dist/vue-select.css'
@@ -186,6 +174,7 @@
   const scanState = inject('scanContext')
 
   const { pluralize } = usePluralize()
+  const { formatNumber } = useFormatNumber()
 
   const pluralizeStats = (key, count) => {
     const form = pluralize(count, {

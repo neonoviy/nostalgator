@@ -76,7 +76,7 @@ Copy `.env.example` to `.env` and configure paths and keys:
 | `SERVER_PORT`          | Backend port (default `3001`)                                 |
 | `AUTODETECT_PLACES`    | Auto-detect places from EXIF GPS (`true`/`false`)             |
 | `AUTODETECT_FACES`     | Auto-start face recognition after scan (`true`/`false`)       |
-| `FACE_MATCH_THRESHOLD` | Cosine similarity threshold for face matching (default `0.6`) |
+| `FACE_MATCH_THRESHOLD` | Cosine similarity threshold for face matching (default `0.55`) |
 
 ## Docker
 

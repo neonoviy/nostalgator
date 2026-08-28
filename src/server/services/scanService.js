@@ -333,7 +333,7 @@ class ScanService {
               })
             }
             logger.thumb(`THUMB ${relativePath}: ${thumbMediaFiles.length} files`)
-            if (this.placeRecognitionService && (forcePlaces || this.autodetectPlaces)) {
+            if (this.placeRecognitionService && forcePlaces) {
               this.placeRecognitionService.queueGeneration({
                 id: eventForQueues.id,
                 year: parseInt(year),
@@ -343,7 +343,7 @@ class ScanService {
                 ...(forcePlaces ? { force: true } : {}),
               })
             }
-            if (this.faceRecognitionService && (forceFaces || this.autodetectFaces)) {
+            if (this.faceRecognitionService && forceFaces) {
               this.faceRecognitionService.queueGeneration({
                 id: eventForQueues.id,
                 folderPath: relativePath,

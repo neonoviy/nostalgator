@@ -19,6 +19,7 @@
     align-items: center;
     padding: 0 var(--spacing-md) var(--spacing-md);
     gap: var(--spacing-sm);
+    padding-right: var(--spacing-sm);
   }
 
   &__settings {
@@ -104,4 +105,15 @@
     margin-top: 12px;
     margin-left: -42px;
   }
+}
+
+.langswitch {
+  width: 24px !important;
+  float: right;
+  margin-top: -12px;
+}
+
+.langswitch .dropdown__button {
+  color: var(--color-muted);
+  font-size: small;
 }

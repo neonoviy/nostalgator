@@ -244,14 +244,8 @@
 
   const formatCount = (n) => {
     const num = Number(n) || 0
-    if (num >= 1000000) {
-      const m = num / 1000000
-      return m % 1 === 0 ? `${m}M` : `${m.toFixed(1).replace(/\.0$/, '')}M`
-    }
-    if (num >= 1000) {
-      const k = num / 1000
-      return k % 1 === 0 ? `${k}K` : `${k.toFixed(1).replace(/\.0$/, '')}K`
-    }
+    if (num >= 1000000) return `${Math.floor(num / 1000000)}M+`
+    if (num >= 1000) return `${Math.floor(num / 1000)}K+`
     return String(num)
   }
 
@@ -275,7 +269,7 @@
       rectangle: {
         defaultColor: cssVar('--map-cluster-default', '#2196F3'),
         selectedColor: cssVar('--map-cluster-selected', '#4CAF50'),
-        maxOpacity: 0.8,
+        maxOpacity: 0.3,
         opacityFactor: 0.03,
         defaultOpacityMultiplier: 0.3,
         strokeWidth: 1,
@@ -327,9 +321,9 @@
     },
   }
 
-  const getRectangleOpacity = (count, isSelected) => {
+  const getRectangleOpacity = (mediaCount, isSelected) => {
     const { maxOpacity, opacityFactor, defaultOpacityMultiplier } = MAP_VISUALS().cluster.rectangle
-    const base = Math.min(count * opacityFactor, maxOpacity)
+    const base = Math.min(mediaCount * opacityFactor, maxOpacity)
     return isSelected ? base : base * defaultOpacityMultiplier
   }
 
@@ -520,6 +514,7 @@
       clusterRadius: 30,
       clusterProperties: {
         sumCount: ['+', ['get', 'count']],
+        sumMedia: ['+', ['get', 'mediaCount']],
       },
     })
 
@@ -532,7 +527,7 @@
         'circle-color': [
           'interpolate',
           ['linear'],
-          ['get', 'sumCount'],
+          ['get', 'sumMedia'],
           0,
           cssVar('--map-cluster-low', '#2166AC'),
           10,
@@ -542,7 +537,7 @@
           100,
           cssVar('--map-cluster-max', '#B2182B'),
         ],
-        'circle-radius': ['step', ['get', 'sumCount'], 20, 10, 30, 50, 40],
+        'circle-radius': ['step', ['get', 'sumMedia'], 20, 10, 30, 50, 40],
         'circle-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0, 13, 0.2],
       },
     })
@@ -552,7 +547,63 @@
       source: 'clusters-geojson',
       filter: ['has', 'point_count'],
       layout: {
-        'text-field': ['get', 'point_count_abbreviated'],
+        'text-field': [
+          'concat',
+          [
+            'case',
+            ['>=', ['get', 'sumMedia'], 1000000],
+            [
+              'concat',
+              ['to-string', ['floor', ['/', ['get', 'sumMedia'], 1000000]]],
+              '.',
+              [
+                'to-string',
+                [
+                  'floor',
+                  [
+                    '/',
+                    [
+                      '-',
+                      ['get', 'sumMedia'],
+                      ['*', ['floor', ['/', ['get', 'sumMedia'], 1000000]], 1000000],
+                    ],
+                    100000,
+                  ],
+                ],
+              ],
+            ],
+            ['>=', ['get', 'sumMedia'], 1000],
+            [
+              'concat',
+              ['to-string', ['floor', ['/', ['get', 'sumMedia'], 1000]]],
+              '.',
+              [
+                'to-string',
+                [
+                  'floor',
+                  [
+                    '/',
+                    [
+                      '-',
+                      ['get', 'sumMedia'],
+                      ['*', ['floor', ['/', ['get', 'sumMedia'], 1000]], 1000],
+                    ],
+                    100,
+                  ],
+                ],
+              ],
+            ],
+            ['to-string', ['get', 'sumMedia']],
+          ],
+          [
+            'case',
+            ['>=', ['get', 'sumMedia'], 1000000],
+            'M+',
+            ['>=', ['get', 'sumMedia'], 1000],
+            'K+',
+            '',
+          ],
+        ],
         'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
         'text-size': 12,
       },
@@ -569,7 +620,7 @@
         'circle-color': [
           'interpolate',
           ['linear'],
-          ['get', 'count'],
+          ['get', 'mediaCount'],
           0,
           cssVar('--map-cluster-low', '#2166AC'),
           10,
@@ -616,7 +667,7 @@
           [
             'interpolate',
             ['linear'],
-            ['get', 'count'],
+            ['get', 'mediaCount'],
             0,
             cssVar('--map-cluster-low', '#2166AC'),
             10,
@@ -642,7 +693,7 @@
           [
             'interpolate',
             ['linear'],
-            ['get', 'count'],
+            ['get', 'mediaCount'],
             0,
             cssVar('--map-cluster-low', '#2166AC'),
             10,
@@ -977,13 +1028,14 @@
       .map((cluster) => {
         const bounds = getCellBounds(cluster.latitude, cluster.longitude)
         const isSelected = isClusterHighlighted(cluster)
-        const fillOpacity = getRectangleOpacity(cluster.count, isSelected)
+        const fillOpacity = getRectangleOpacity(cluster.mediaCount, isSelected)
         return {
           type: 'Feature',
           id: cluster.id,
           properties: {
             clusterId: cluster.id,
             count: cluster.count,
+            mediaCount: cluster.mediaCount,
             selected: isSelected,
             fillOpacity: fillOpacity,
           },
@@ -1004,7 +1056,7 @@
     const filtered = getFilteredClusters()
     const features = filtered.map((c) => {
       const isSelected = isClusterSelected(c)
-      const base = Math.min((c.count || 1) * 0.03, 1.0)
+      const base = Math.min((c.mediaCount || 1) * 0.03, 1.0)
       const pointOpacity = Math.max(0.3, base)
       return {
         type: 'Feature',
@@ -1016,7 +1068,7 @@
           placeIds: c.placeIds || [],
           selected: isSelected,
           pointOpacity: pointOpacity,
-          countLabel: formatCount(c.count),
+          countLabel: formatCount(c.mediaCount),
         },
         geometry: { type: 'Point', coordinates: [c.longitude, c.latitude] },
       }
@@ -1354,7 +1406,6 @@
     if (!visible || !mapInstance || isSimpleMode.value) return
     updateAllRectangles()
     updateClustersGeoJSON()
-    fitMapToClusters()
   })
 
   watch(
