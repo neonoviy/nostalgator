@@ -43,7 +43,7 @@
         :taggable="true"
         :create-option="createOption"
         :clearable="true"
-        :auto-focus="true"
+        :auto-focus="!activePopupFace?.personName"
         :placeholder="t('face.unknown')"
         :search-placeholder="t('face.selectParticipant')"
         no-options-text="{{ t('face.noParticipants') }}"
@@ -344,7 +344,9 @@
     popupAnchorEl.value = event?.target?.closest?.('.face-rectangle') || null
     activePopupFaceId.value = face.id
     nextTick(() => {
-      popupRef.value?.querySelector('.vs__search')?.focus()
+      if (!face.personName) {
+        popupRef.value?.querySelector('.vs__search')?.focus()
+      }
     })
   }
 

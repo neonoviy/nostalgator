@@ -186,6 +186,18 @@ class WebSocketService {
   notifyFaceEventProgress(eventId, data) {
     this.broadcast('face:event-progress', { eventId, ...data })
   }
+
+  /**
+   * Уведомление об изменении тегов участников события после назначения/снятия
+   * имени с лица (ручное назначение или сканирование).
+   * @param {Object} data - { added: [{eventId, name}], removed: [{eventId, name}] }
+   */
+  notifyFaceParticipantsChanged(data = {}) {
+    this.broadcast('face:participants-changed', {
+      added: data.added || [],
+      removed: data.removed || [],
+    })
+  }
 }
 
 module.exports = WebSocketService

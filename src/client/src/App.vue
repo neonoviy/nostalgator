@@ -1006,6 +1006,21 @@
     clustersState.reload()
   }
 
+  // Realtime update of event participant tags pushed from the server after a
+  // face is named/unnamed (manual naming or scan). Mirrors the local
+  // onFaceNameChanged handler but is driven by the WebSocket broadcast so the
+  // timeline stays in sync even when the event isn't loaded in the store yet.
+  const onWsFaceParticipantsChanged = (e) => {
+    const { added = [], removed = [] } = (e && e.detail) || {}
+    added.forEach(({ eventId, name }) => {
+      if (eventId != null && name) eventsState.updateEventParticipants(eventId, name, 'add')
+    })
+    removed.forEach(({ eventId, name }) => {
+      if (eventId != null && name) eventsState.updateEventParticipants(eventId, name, 'remove')
+    })
+    eventsState.loadTagCounts()
+  }
+
   onMounted(() => {
     window.addEventListener('fancybox:opened', openFancybox)
     window.addEventListener('fancybox:closed', closeFancybox)
@@ -1014,6 +1029,7 @@
     window.addEventListener('fancybox:closed', stopOverlayWatch)
     window.addEventListener('media-deleted', () => loadEvents(false))
     window.addEventListener('ws:events-changed', onEventsChanged)
+    window.addEventListener('ws:face-participants-changed', onWsFaceParticipantsChanged)
 
     window.addEventListener('ws:scan:pending-folders', onPendingFoldersEvent)
 
@@ -1207,6 +1223,7 @@
     window.removeEventListener('fancybox:closed', stopOverlayWatch)
     window.removeEventListener('media-deleted', () => loadEvents(false))
     window.removeEventListener('ws:events-changed', onEventsChanged)
+    window.removeEventListener('ws:face-participants-changed', onWsFaceParticipantsChanged)
     window.removeEventListener('ws:scan:pending-folders', onPendingFoldersEvent)
     window.removeEventListener('keydown', handleHomeKey)
 

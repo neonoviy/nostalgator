@@ -284,26 +284,34 @@ module.exports = (app, ctx) => {
           }
         }
 
-        const personFaces = await ctx.prisma.face.findMany({
-          where: { personId: face.personId },
-          include: { media: { select: { eventId: true } } },
-        })
-        const eventIds = [...new Set(personFaces.map((f) => f.media.eventId))]
-        const events = await ctx.prisma.event.findMany({
-          where: { id: { in: eventIds } },
-          select: { id: true, allowedGroupIds: true },
-        })
-        const allowedGroupIdsByEvent = new Map(events.map((e) => [e.id, e.allowedGroupIds]))
-        for (const eventId of eventIds) {
-          await ctx.prisma.eventParticipant.upsert({
-            where: { eventId_participantId: { eventId, participantId: participant.id } },
-            update: {},
-            create: {
-              eventId,
-              participantId: participant.id,
-              allowedGroupIds: allowedGroupIdsByEvent.get(eventId) || null,
-            },
+        let eventIds = []
+        if (ctx.faceRecognitionService) {
+          eventIds = await ctx.faceRecognitionService.ensureEventParticipantsForPerson(
+            face.personId,
+            participant.id,
+          )
+        } else {
+          const personFaces = await ctx.prisma.face.findMany({
+            where: { personId: face.personId },
+            include: { media: { select: { eventId: true } } },
           })
+          eventIds = [...new Set(personFaces.map((f) => f.media.eventId))]
+          const events = await ctx.prisma.event.findMany({
+            where: { id: { in: eventIds } },
+            select: { id: true, allowedGroupIds: true },
+          })
+          const allowedGroupIdsByEvent = new Map(events.map((e) => [e.id, e.allowedGroupIds]))
+          for (const eventId of eventIds) {
+            await ctx.prisma.eventParticipant.upsert({
+              where: { eventId_participantId: { eventId, participantId: participant.id } },
+              update: {},
+              create: {
+                eventId,
+                participantId: participant.id,
+                allowedGroupIds: allowedGroupIdsByEvent.get(eventId) || null,
+              },
+            })
+          }
         }
 
         if (ctx.faceRecognitionService) {
@@ -314,6 +322,12 @@ module.exports = (app, ctx) => {
           where: { id: face.personId },
           select: { faceCount: true },
         })
+
+        if (ctx.websocketService) {
+          ctx.websocketService.notifyFaceParticipantsChanged({
+            added: eventIds.map((eventId) => ({ eventId, name: participant.name })),
+          })
+        }
 
         res.success({ participantId: participant.id, faceCount: updated?.faceCount ?? 0, eventIds })
       } catch (error) {
@@ -443,6 +457,15 @@ module.exports = (app, ctx) => {
               participantDeleted = true
             }
           }
+        }
+
+        if (ctx.websocketService && affectedEventIds.length > 0 && removedParticipantName) {
+          ctx.websocketService.notifyFaceParticipantsChanged({
+            removed: affectedEventIds.map((eid) => ({
+              eventId: eid,
+              name: removedParticipantName,
+            })),
+          })
         }
 
         res.success({

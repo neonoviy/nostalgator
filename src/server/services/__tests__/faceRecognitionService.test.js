@@ -54,6 +54,16 @@ function createMockPrisma() {
         Object.assign(item, data)
         return item
       },
+      updateMany: async ({ where, data }) => {
+        const matched = _store[storeName].filter((item) => {
+          for (const [key, val] of Object.entries(where)) {
+            if (item[key] !== val) return false
+          }
+          return true
+        })
+        for (const item of matched) Object.assign(item, data)
+        return { count: matched.length }
+      },
       delete: async ({ where }) => {
         const idx = _store[storeName].findIndex((i) => i.id === where.id)
         if (idx === -1) return null
@@ -107,10 +117,21 @@ function createMockPrisma() {
         }
         return ev
       },
+      findMany: async ({ where } = {}) => {
+        let res = _store.events
+        if (where && where.id && where.id.in) {
+          res = res.filter((e) => where.id.in.includes(e.id))
+        }
+        return res
+      },
     },
     eventParticipant: mockModel('eventParticipants'),
     $queryRawUnsafe: async () => [],
-    $transaction: async (fn) => fn(prisma),
+    $transaction: async (arg) => {
+      if (typeof arg === 'function') return arg(prisma)
+      // Batched (serial) transaction: array of operations.
+      return Promise.all(arg)
+    },
     _getStore: () => _store,
     _nextId: () => nextId,
     _setNextId: (n) => {
@@ -213,6 +234,10 @@ describe('FaceRecognitionService.processEvent — event participants', () => {
     svc.writeFaces = async () => {}
     svc._ensureGpuDetected = async () => true
 
+    // Seed a face + event so the helper can resolve events from the DB.
+    prisma._getStore().events.push({ id: 1, allowedGroupIds: 'g1' })
+    prisma._getStore().faces.push({ id: 1, personId: 1, media: { eventId: 1 } })
+
     const event = { id: 1, folderPath: '2026/01' }
     await svc.processEvent(event)
 
@@ -305,5 +330,90 @@ describe('FaceRecognitionService.processEvent — event participants', () => {
 
     const store = prisma._getStore()
     assert.strictEqual(store.eventParticipants.length, 0, 'EventParticipant не должен создаваться, если нет совпадений')
+  })
+})
+
+// ==================== ensureEventParticipantsForPerson ====================
+
+describe('FaceRecognitionService.ensureEventParticipantsForPerson', () => {
+  it('должен создавать EventParticipant для каждого события персоны', async () => {
+    const prisma = createMockPrisma()
+    const svc = createService(prisma)
+    const store = prisma._getStore()
+
+    store.events.push({ id: 1, allowedGroupIds: 'g1' })
+    store.events.push({ id: 2, allowedGroupIds: null })
+    store.faces.push({ id: 1, personId: 5, media: { eventId: 1 } })
+    store.faces.push({ id: 2, personId: 5, media: { eventId: 2 } })
+
+    const eventIds = await svc.ensureEventParticipantsForPerson(5, 10)
+
+    assert.deepStrictEqual([...eventIds].sort(), [1, 2])
+    assert.ok(
+      store.eventParticipants.find((ep) => ep.eventId === 1 && ep.participantId === 10),
+      'EventParticipant для события 1 должен быть создан',
+    )
+    assert.ok(
+      store.eventParticipants.find((ep) => ep.eventId === 2 && ep.participantId === 10),
+      'EventParticipant для события 2 должен быть создан',
+    )
+    const ep1 = store.eventParticipants.find((ep) => ep.eventId === 1 && ep.participantId === 10)
+    assert.strictEqual(ep1.allowedGroupIds, 'g1', 'allowedGroupIds должен проставиться из события')
+  })
+
+  it('не должен создавать EventParticipant, если у персоны нет лиц', async () => {
+    const prisma = createMockPrisma()
+    const svc = createService(prisma)
+    const store = prisma._getStore()
+
+    store.events.push({ id: 1, allowedGroupIds: 'g1' })
+
+    const eventIds = await svc.ensureEventParticipantsForPerson(5, 10)
+    assert.strictEqual(eventIds.length, 0)
+    assert.strictEqual(store.eventParticipants.length, 0)
+  })
+
+  it('должен возвращать [] при отсутствии personId/participantId', async () => {
+    const prisma = createMockPrisma()
+    const svc = createService(prisma)
+    assert.deepStrictEqual(await svc.ensureEventParticipantsForPerson(null, 10), [])
+    assert.deepStrictEqual(await svc.ensureEventParticipantsForPerson(5, null), [])
+  })
+})
+
+// ==================== mergePersons ====================
+
+describe('FaceRecognitionService.mergePersons', () => {
+  it('должен перенести лица и удалить исходную персону, если лиц не осталось', async () => {
+    const prisma = createMockPrisma()
+    const svc = createService(prisma)
+    const store = prisma._getStore()
+
+    store.persons.push({ id: 1, faceCount: 1 })
+    store.persons.push({ id: 2, faceCount: 1 })
+    store.faces.push({ id: 10, personId: 2, descriptor: 'AAA' })
+    svc.recalculatePersonDescriptor = async () => {}
+
+    await svc.mergePersons(1, [2])
+
+    const movedFace = store.faces.find((f) => f.id === 10)
+    assert.strictEqual(movedFace.personId, 1, 'Лицо должно перейти к целевой персоне')
+    assert.ok(
+      !store.persons.find((p) => p.id === 2),
+      'Исходная персона без лиц должна быть удалена',
+    )
+  })
+
+  it('не должен ничего делать при пустом списке sourceIds', async () => {
+    const prisma = createMockPrisma()
+    const svc = createService(prisma)
+
+    let called = false
+    prisma.$transaction = async () => {
+      called = true
+    }
+
+    await svc.mergePersons(1, [])
+    assert.strictEqual(called, false, '$transaction не должен вызываться для пустого списка')
   })
 })

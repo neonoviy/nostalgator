@@ -85,6 +85,10 @@ export function useWebSocket() {
         window.dispatchEvent(new CustomEvent('ws:auth-logout'))
         break
 
+      case 'face:participants-changed':
+        window.dispatchEvent(new CustomEvent('ws:face-participants-changed', { detail: data }))
+        break
+
       default:
         break
     }

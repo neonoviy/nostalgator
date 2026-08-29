@@ -414,30 +414,39 @@ class FaceRecognitionService {
       }
     }
 
-    const matchedParticipantIds = new Set()
+    const personIdToParticipant = new Map()
     for (const face of newFaces) {
       const entry = this._knownPersonsCache.get(face.personId)
       if (entry && entry.participantId) {
-        matchedParticipantIds.add(entry.participantId)
+        personIdToParticipant.set(face.personId, entry.participantId)
       }
     }
 
-    if (matchedParticipantIds.size > 0) {
-      const eventRecord = await this.prisma.event.findUnique({
-        where: { id: event.id },
-        select: { allowedGroupIds: true },
-      })
-      const allowedGroupIds = eventRecord?.allowedGroupIds || null
+    if (personIdToParticipant.size > 0) {
+      const addedByParticipant = new Map()
+      for (const [personId, participantId] of personIdToParticipant) {
+        const eventIds = await this.ensureEventParticipantsForPerson(personId, participantId)
+        if (!addedByParticipant.has(participantId)) addedByParticipant.set(participantId, new Set())
+        eventIds.forEach((id) => addedByParticipant.get(participantId).add(id))
+      }
 
-      await this.prisma.$transaction(async (tx) => {
-        for (const participantId of matchedParticipantIds) {
-          await tx.eventParticipant.upsert({
-            where: { eventId_participantId: { eventId: event.id, participantId } },
-            update: {},
-            create: { eventId: event.id, participantId, allowedGroupIds },
-          })
+      if (this.websocketService && addedByParticipant.size > 0) {
+        const participantIds = [...addedByParticipant.keys()]
+        const participants = await this.prisma.participant.findMany({
+          where: { id: { in: participantIds } },
+          select: { id: true, name: true },
+        })
+        const nameById = new Map(participants.map((p) => [p.id, p.name]))
+        const added = []
+        for (const [participantId, eventIdSet] of addedByParticipant) {
+          const name = nameById.get(participantId)
+          if (!name) continue
+          for (const eventId of eventIdSet) added.push({ eventId, name })
         }
-      })
+        if (added.length > 0) {
+          this.websocketService.notifyFaceParticipantsChanged({ added })
+        }
+      }
     }
 
     if (newFaces.length > 0) {
@@ -470,6 +479,44 @@ class FaceRecognitionService {
       newPersons: unmatchedCount,
       matchedPersons: matchedCount,
     }
+  }
+
+  /**
+   * Ensure every event that contains a face of `personId` has an EventParticipant
+   * row for `participantId`. Used both during scanning and during manual naming so
+   * the assignment logic stays identical. Returns the list of affected event ids.
+   * @param {number} personId
+   * @param {number} participantId
+   * @returns {Promise<number[]>}
+   */
+  async ensureEventParticipantsForPerson(personId, participantId) {
+    if (!personId || !participantId) return []
+
+    const faces = await this.prisma.face.findMany({
+      where: { personId },
+      select: { media: { select: { eventId: true } } },
+    })
+    const eventIds = [...new Set(faces.map((f) => f.media.eventId).filter((id) => id != null))]
+    if (eventIds.length === 0) return []
+
+    const events = await this.prisma.event.findMany({
+      where: { id: { in: eventIds } },
+      select: { id: true, allowedGroupIds: true },
+    })
+    const allowedGroupIdsByEvent = new Map(events.map((e) => [e.id, e.allowedGroupIds]))
+
+    for (const eventId of eventIds) {
+      await this.prisma.eventParticipant.upsert({
+        where: { eventId_participantId: { eventId, participantId } },
+        update: {},
+        create: {
+          eventId,
+          participantId,
+          allowedGroupIds: allowedGroupIdsByEvent.get(eventId) || null,
+        },
+      })
+    }
+    return eventIds
   }
 
   async _getMediaWithFaceCount(eventId) {
@@ -1120,19 +1167,20 @@ class FaceRecognitionService {
   async mergePersons(targetId, sourceIds) {
     if (!sourceIds || sourceIds.length === 0) return
 
-    await this.prisma.$transaction(async (tx) => {
-      for (const sourceId of sourceIds) {
-        if (sourceId === targetId) continue
-        await tx.face.updateMany({
-          where: { personId: sourceId },
-          data: { personId: targetId },
-        })
-        const remaining = await tx.face.count({ where: { personId: sourceId } })
-        if (remaining === 0) {
-          await tx.person.delete({ where: { id: sourceId } })
-        }
+    for (const sourceId of sourceIds) {
+      if (sourceId === targetId) continue
+      // Move all faces of the source person to the target person, then delete
+      // the now-empty source person. Done as plain sequential calls (no
+      // interactive transaction) to avoid Prisma P2028 under concurrent load.
+      await this.prisma.face.updateMany({
+        where: { personId: sourceId },
+        data: { personId: targetId },
+      })
+      const remaining = await this.prisma.face.count({ where: { personId: sourceId } })
+      if (remaining === 0) {
+        await this.prisma.person.delete({ where: { id: sourceId } }).catch(() => {})
       }
-    })
+    }
 
     await this.recalculatePersonDescriptor(targetId)
   }
