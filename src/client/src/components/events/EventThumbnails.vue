@@ -52,6 +52,7 @@
   import { THUMBNAILS_PER_EVENT, VIDEO_EXTENSIONS } from '../../config.js'
   import { Fancybox } from '@fancyapps/ui'
   import { Sidebar } from '@fancyapps/ui/dist/fancybox/fancybox.sidebar.js'
+  import { isHistoryNavigation } from '../../composables/useFancyboxHistory'
   import '@fancyapps/ui/dist/fancybox/fancybox.css'
   import '@fancyapps/ui/dist/fancybox/fancybox.sidebar.css'
 
@@ -137,7 +138,13 @@
           exifSidebar.setSrc(slide.src, mediaId)
           const currentThumb = displayedThumbnails.value.find((t) => t.id === mediaId)
           if (currentThumb) {
-            router.replace({ path: getSpaUrl(currentThumb), query: route.query })
+            const path = getSpaUrl(currentThumb)
+            if (isHistoryNavigation.value) {
+              isHistoryNavigation.value = false
+              router.replace({ path, query: route.query })
+            } else {
+              router.push({ path, query: route.query })
+            }
           }
           window.dispatchEvent(new CustomEvent('fancybox:slideChanged'))
         }
@@ -167,6 +174,7 @@
     const slides = displayedThumbnails.value.map((t) => ({
       src: getOriginalUrl(t),
       mediaId: t.id,
+      filename: t.filename,
     }))
 
     Fancybox.close()
@@ -175,7 +183,7 @@
       startIndex: index,
     })
 
-    router.replace({ path: getSpaUrl(thumb), query: route.query })
+    router.push({ path: getSpaUrl(thumb), query: route.query })
   }
 
   const isVideoFile = (filename) => {

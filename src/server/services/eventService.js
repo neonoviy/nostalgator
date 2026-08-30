@@ -283,68 +283,67 @@ class EventService {
       const oldPath = path.join(this.originalsPath, year, oldFolderName)
       const newPath = path.join(this.originalsPath, year, newFolderName)
 
-      // Check if folder exists
+      let renameSucceeded = false
+      let renameTimer = null
       try {
-        await fs.access(oldPath)
-      } catch (err) {
-        logger.warn(`Folder not found: ${oldPath}, updating DB only`)
-        // Folder not on disk, update DB only
-      }
-
-      // Rename folder on disk
-      try {
-        await fs.rename(oldPath, newPath)
-      } catch (renameErr) {
-        logger.error(`Failed to rename folder: ${renameErr.message}`)
-        // Reset flag
-        if (this.watcherService) {
-          this.watcherService.setRenamingFlag(false)
-        }
-        throw new Error(`Failed to rename folder: ${renameErr.message}`)
-      }
-
-      // Check if folder with this name already exists
-      const existingEvent = await this.prisma.event.findFirst({
-        where: {
-          folderPath: `${year}/${newFolderName}`,
-          id: { not: eventId },
-        },
-      })
-
-      if (existingEvent) {
-        // Rollback folder rename
+        // Rename folder on disk
         try {
-          await fs.rename(newPath, oldPath)
-        } catch (err) {
-          logger.error('Failed to rollback folder rename')
+          await fs.rename(oldPath, newPath)
+          renameSucceeded = true
+        } catch (renameErr) {
+          logger.error(`Failed to rename folder: ${renameErr.message}`)
+          if (this.watcherService) {
+            this.watcherService.setRenamingFlag(false)
+          }
+          throw new Error(`Failed to rename folder: ${renameErr.message}`)
         }
-        // Reset flag
+
+        // Check if folder with this name already exists
+        const existingEvent = await this.prisma.event.findFirst({
+          where: {
+            folderPath: `${year}/${newFolderName}`,
+            id: { not: eventId },
+          },
+        })
+
+        if (existingEvent) {
+          // Rollback folder rename
+          try {
+            await fs.rename(newPath, oldPath)
+          } catch (err) {
+            logger.error('Failed to rollback folder rename', err)
+          }
+          throw new Error('Event with this name already exists')
+        }
+
+        // Update folderPath in DB
+        const updatedEvent = await this.prisma.event.update({
+          where: { id: eventId },
+          data: {
+            folderPath: `${year}/${newFolderName}`,
+            title: trimmedTitle, // May be empty
+          },
+        })
+
+        // Reset rename flag NOT immediately, but after a small delay
+        // Give chokidar time to process events
         if (this.watcherService) {
+          renameTimer = setTimeout(() => {
+            this.watcherService.setRenamingFlag(false)
+          }, 15000) // 15 seconds (debounce delay in chokidar)
+        }
+
+        // Clear tag cache
+        if (this.tagService) {
+          this.tagService.clearTagsCache()
+        }
+      } catch (error) {
+        // On any error after rename, reset flag immediately
+        if (this.watcherService) {
+          if (renameTimer) clearTimeout(renameTimer)
           this.watcherService.setRenamingFlag(false)
         }
-        throw new Error('Event with this name already exists')
-      }
-
-      // Update folderPath in DB
-      const updatedEvent = await this.prisma.event.update({
-        where: { id: eventId },
-        data: {
-          folderPath: `${year}/${newFolderName}`,
-          title: trimmedTitle, // May be empty
-        },
-      })
-
-      // Reset rename flag NOT immediately, but after a small delay
-      // Give chokidar time to process events
-      if (this.watcherService) {
-        setTimeout(() => {
-          this.watcherService.setRenamingFlag(false)
-        }, 15000) // 15 seconds (debounce delay in chokidar)
-      }
-
-      // Clear tag cache
-      if (this.tagService) {
-        this.tagService.clearTagsCache()
+        throw error
       }
     } catch (error) {
       logger.error('Failed to rename event', error)
@@ -913,28 +912,38 @@ class EventService {
       })
     }
 
-    // Rename
-    try {
-      await fs.rename(oldPath, newPath)
-    } catch (err) {
-      throw Object.assign(new Error(`Failed to rename folder: ${err.message}`), {
-        code: 'INTERNAL_ERROR',
-      })
-    }
-
-    // Update DB
-    await this.updateEventFolderPath(eventId, newFolderPath, folderName)
-
-    // Set watcher flag
+    // Set watcher flag BEFORE rename
     if (this.watcherService) {
       this.watcherService.setRenamingFlag(true)
-      setTimeout(() => this.watcherService.setRenamingFlag(false), 15000)
     }
 
-    // Clear tag cache
-    if (this.tagService) this.tagService.clearTagsCache()
+    let renameTimer = null
+    try {
+      // Rename
+      await fs.rename(oldPath, newPath)
 
-    return { folderPath: newFolderPath, title: folderName }
+      // Update DB
+      await this.updateEventFolderPath(eventId, newFolderPath, folderName)
+
+      // Reset flag after delay
+      if (this.watcherService) {
+        renameTimer = setTimeout(() => {
+          this.watcherService.setRenamingFlag(false)
+        }, 15000)
+      }
+
+      // Clear tag cache
+      if (this.tagService) this.tagService.clearTagsCache()
+
+      return { folderPath: newFolderPath, title: folderName }
+    } catch (err) {
+      // On error, reset flag immediately and rethrow
+      if (this.watcherService) {
+        if (renameTimer) clearTimeout(renameTimer)
+        this.watcherService.setRenamingFlag(false)
+      }
+      throw err
+    }
   }
 
   /**

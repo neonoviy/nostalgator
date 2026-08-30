@@ -414,6 +414,15 @@ class FaceRecognitionService {
       }
     }
 
+    // Faces must be persisted before assigning participants: the helper
+    // resolves event ids from the Face table, so it only finds the events of a
+    // person once its faces have actually been written.
+    if (newFaces.length > 0) {
+      if (timingEnabled) writeStart = Date.now()
+      await this.writeFaces(newFaces)
+      if (timingEnabled) writeElapsed = (Date.now() - writeStart) / 1000
+    }
+
     const personIdToParticipant = new Map()
     for (const face of newFaces) {
       const entry = this._knownPersonsCache.get(face.personId)
@@ -447,12 +456,6 @@ class FaceRecognitionService {
           this.websocketService.notifyFaceParticipantsChanged({ added })
         }
       }
-    }
-
-    if (newFaces.length > 0) {
-      if (timingEnabled) writeStart = Date.now()
-      await this.writeFaces(newFaces)
-      if (timingEnabled) writeElapsed = (Date.now() - writeStart) / 1000
     }
 
     const gpuAvailable = await this._ensureGpuDetected()

@@ -83,8 +83,8 @@ export function useUrlFilters() {
         delete query[key]
       }
     })
-    router.replace({ query })
-    // Synchronously update filters (router.replace is async, but we need instant)
+    router.push({ query })
+    // Synchronously update filters (router.push is async, but we need instant)
     Object.entries(newFilters).forEach(([key, value]) => {
       filters[key] = value
     })
@@ -102,7 +102,7 @@ export function useUrlFilters() {
   }
 
   const clearAllFilters = () => {
-    router.replace({ query: {} })
+    router.push({ query: {} })
     // Reset reactive filters object
     Object.keys(filters).forEach((key) => {
       if (Array.isArray(filters[key])) {

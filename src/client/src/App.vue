@@ -112,6 +112,7 @@
   import { useClusters } from './composables/useClusters.js'
   import { usePlaces } from './composables/usePlaces.js'
   import { useWebSocket } from './composables/useWebSocket'
+  import { isHistoryNavigation } from './composables/useFancyboxHistory'
   import { Fancybox } from '@fancyapps/ui'
   import { Sidebar as FancyboxSidebar } from '@fancyapps/ui/dist/fancybox/fancybox.sidebar.js'
   import '@fancyapps/ui/dist/fancybox/fancybox.sidebar.css'
@@ -713,10 +714,13 @@
                     sidebarKey.value++
                     const filename = slide?.filename
                     if (filename && route.params.year && route.params.month) {
-                      router.replace({
-                        path: `/${route.params.year}/${route.params.month}/${filename}`,
-                        query: route.query,
-                      })
+                      const path = `/${route.params.year}/${route.params.month}/${filename}`
+                      if (isHistoryNavigation.value) {
+                        isHistoryNavigation.value = false
+                        router.replace({ path, query: route.query })
+                      } else {
+                        router.push({ path, query: route.query })
+                      }
                     }
                     window.dispatchEvent(new CustomEvent('fancybox:slideChanged'))
                   }
@@ -764,10 +768,8 @@
       if (suppressScrollWatch.value) return
 
       const { year, month, filename } = route.params
-      if (!filename) {
-        Fancybox.close()
-        return
-      }
+      if (!filename) return
+
       if (document.querySelector('.fancybox__container')) return
       await scrollToDeepLink()
 
@@ -789,6 +791,54 @@
     },
     { immediate: true },
   )
+
+  const handleFancyboxPopState = async () => {
+    const fancybox = Fancybox.getInstance()
+    if (!fancybox || !document.querySelector('.fancybox__container')) return
+
+    const pathParts = window.location.pathname.split('/').filter(Boolean)
+    const filename = pathParts[2] ? decodeURIComponent(pathParts[2]) : null
+
+    if (!filename) {
+      Fancybox.close()
+      return
+    }
+
+    const carousel = fancybox.Carousel || fancybox.carousel
+    if (carousel?.slides?.length) {
+      const index = Array.from(carousel.slides).findIndex((s) => s.filename === filename)
+      if (index >= 0) {
+        isHistoryNavigation.value = true
+        carousel.slideTo(index)
+        return
+      }
+    }
+
+    Fancybox.close()
+  }
+
+  onMounted(() => {
+    window.addEventListener('fancybox:opened', openFancybox)
+    window.addEventListener('fancybox:closed', closeFancybox)
+    window.addEventListener('fancybox:slideChanged', onSlideChanged)
+    window.addEventListener('fancybox:opened', startOverlayWatch)
+    window.addEventListener('fancybox:closed', stopOverlayWatch)
+    window.addEventListener('media-deleted', () => loadEvents(false))
+    window.addEventListener('ws:events-changed', onEventsChanged)
+    window.addEventListener('ws:face-participants-changed', onWsFaceParticipantsChanged)
+
+    window.addEventListener('ws:scan:pending-folders', onPendingFoldersEvent)
+
+    window.addEventListener('keydown', handleHomeKey)
+
+    const mainContent = document.querySelector('.main-content')
+    if (mainContent) {
+      mainContent.addEventListener('scroll', handleScrollSpy)
+      mainContent.addEventListener('scroll', onMainContentScroll)
+    }
+
+    window.addEventListener('popstate', handleFancyboxPopState)
+  })
 
   // Destructuring reactive values (directly from useEvents)
   const { places, eventTypes, people, tags } = eventsState
@@ -1021,25 +1071,6 @@
     eventsState.loadTagCounts()
   }
 
-  onMounted(() => {
-    window.addEventListener('fancybox:opened', openFancybox)
-    window.addEventListener('fancybox:closed', closeFancybox)
-    window.addEventListener('fancybox:slideChanged', onSlideChanged)
-    window.addEventListener('fancybox:opened', startOverlayWatch)
-    window.addEventListener('fancybox:closed', stopOverlayWatch)
-    window.addEventListener('media-deleted', () => loadEvents(false))
-    window.addEventListener('ws:events-changed', onEventsChanged)
-    window.addEventListener('ws:face-participants-changed', onWsFaceParticipantsChanged)
-
-    window.addEventListener('ws:scan:pending-folders', onPendingFoldersEvent)
-
-    const mainContent = document.querySelector('.main-content')
-    if (mainContent) {
-      mainContent.addEventListener('scroll', handleScrollSpy)
-      mainContent.addEventListener('scroll', onMainContentScroll)
-    }
-  })
-
   // Drag'n'Drop
   const {
     isDragging,
@@ -1080,17 +1111,6 @@
   const onPendingFoldersEvent = (event) => {
     const folders = (event.detail && event.detail.folders) || []
     scanState.pendingFolders.value = folders
-    if (authState.isAdmin.value && folders.length > 0) {
-      pendingNotificationShown.value = false
-      addNotification('info', t('app.newEventsDetected'), {
-        id: 'pending-events',
-        persistent: true,
-        actionLabel: t('app.openScan'),
-        actionHandler: () => {
-          settingsModal.openSettingsModal('scan', { folders: [...folders] })
-        },
-      })
-    }
   }
 
 
@@ -1225,6 +1245,7 @@
     window.removeEventListener('ws:events-changed', onEventsChanged)
     window.removeEventListener('ws:face-participants-changed', onWsFaceParticipantsChanged)
     window.removeEventListener('ws:scan:pending-folders', onPendingFoldersEvent)
+    window.removeEventListener('popstate', handleFancyboxPopState)
     window.removeEventListener('keydown', handleHomeKey)
 
     const mainContent = document.querySelector('.main-content')

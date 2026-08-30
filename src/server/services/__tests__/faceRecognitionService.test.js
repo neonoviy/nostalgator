@@ -331,6 +331,68 @@ describe('FaceRecognitionService.processEvent — event participants', () => {
     const store = prisma._getStore()
     assert.strictEqual(store.eventParticipants.length, 0, 'EventParticipant не должен создаваться, если нет совпадений')
   })
+
+  it('должен создавать EventParticipant для отсканированного события (лица записываются ДО назначения участников)', async () => {
+    const prisma = createMockPrisma()
+    const svc = createService(prisma)
+
+    const descB64 = encodeDescriptor(new Float32Array([1, 0, 0]))
+    prisma.$queryRawUnsafe = async () => []
+
+    svc._knownPersonsCache = new Map([
+      [
+        1,
+        {
+          id: 1,
+          participantId: 10,
+          _sum: new Float32Array([3, 0, 0]),
+          _count: 3,
+          _cachedAvg: new Float32Array([1, 0, 0]),
+          _dirty: false,
+        },
+      ],
+    ])
+    svc._passerbyPersonsCache = new Map()
+
+    prisma.media.findMany = async () => [{ id: 1, filename: 'photo.jpg', width: 100, height: 100 }]
+    prisma.event.findUnique = async () => ({ id: 1, folderPath: '2026/01', allowedGroupIds: 'g1' })
+    // Событие существует, но лиц в "БД" изначально нет.
+    prisma._getStore().events.push({ id: 1, allowedGroupIds: 'g1' })
+
+    svc.detectFaces = async () => [
+      {
+        file: 'photo.jpg',
+        faces: [{ descriptor: descB64, x: 0, y: 0, w: 100, h: 100 }],
+      },
+    ]
+
+    // writeFaces реально сохраняет лица в "БД" (как продакшн-код), но только при
+    // своём вызове — до него лиц в сторе нет. Регрессия: блок назначения
+    // участников раньше выполнялся ДО writeFaces и не находил лиц в БД.
+    svc.writeFaces = async (faces) => {
+      const store = prisma._getStore()
+      for (const f of faces) {
+        store.faces.push({
+          id: store.faces.length + 1,
+          personId: f.personId,
+          media: { eventId: 1 },
+          mediaId: f.mediaId,
+        })
+      }
+    }
+    svc._ensureGpuDetected = async () => true
+
+    const event = { id: 1, folderPath: '2026/01' }
+    await svc.processEvent(event)
+
+    const store = prisma._getStore()
+    assert.ok(store.faces.some((f) => f.personId === 1), 'Лицо должно быть записано в БД')
+    const ep = store.eventParticipants.find((ep) => ep.eventId === 1 && ep.participantId === 10)
+    assert.ok(
+      ep,
+      'EventParticipant должен быть создан для отсканированного события после записи лиц',
+    )
+  })
 })
 
 // ==================== ensureEventParticipantsForPerson ====================

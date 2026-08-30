@@ -3,10 +3,13 @@ import { getT } from '../i18n/composable.js'
 import { addNotification } from './useNotifications.js'
 import { sortEvents } from '../utils/sortEvents.js'
 import { Fancybox } from '@fancyapps/ui'
+import { useRoute, useRouter } from 'vue-router'
 
 export function useEventSave(token, eventsByYear, eventsState, showEditModal, loadEvents) {
   const saving = ref(false)
   const t = getT()
+  const route = useRoute()
+  const router = useRouter()
 
   // Save event (path, folder name, date, tags)
   const saveEvent = async (data) => {
@@ -185,7 +188,38 @@ export function useEventSave(token, eventsByYear, eventsState, showEditModal, lo
         data.onFolderNameError(err.error?.message || err.error || t('event.renameError'))
       return
     }
+
     data._folderNameOk = true
+
+    const result = await res.json()
+    const newFolderPath = result.success ? result.data.folderPath : result.folderPath
+    const newTitle = result.success ? result.data.title : result.title
+
+    if (newFolderPath || newTitle) {
+      let currentYear = null
+      let oldFolderPath = null
+      for (const year in eventsByYear) {
+        const ev = eventsByYear[year].events.find((e) => e.id === id)
+        if (ev) {
+          currentYear = year
+          oldFolderPath = ev.folderPath
+          break
+        }
+      }
+
+      _updateEventInState({
+        id,
+        folderPath: newFolderPath,
+        title: newTitle,
+        year: currentYear,
+      })
+
+      if (oldFolderPath && newFolderPath && route.params.month === oldFolderPath.split('/')[1]) {
+        const newMonth = newFolderPath.split('/')[1]
+        const newYear = newFolderPath.split('/')[0]
+        router.replace({ params: { ...route.params, year: newYear, month: newMonth } })
+      }
+    }
   }
 
   const _updateDate = async (id, eventDate, data, eventsByYearArg) => {
