@@ -2,6 +2,7 @@ const { exiftool } = require('exiftool-vendored');
 const fs = require('fs').promises;
 const path = require('path');
 const dotenv = require('dotenv');
+const { parseImportDate } = require('../src/server/utils/fileUtils');
 
 dotenv.config();
 
@@ -33,81 +34,17 @@ function formatFolderName(date, format) {
 }
 
 /**
- * Извлекает дату из имени файла (YYYYMMDD формат)
- */
-function parseDateFromFilename(filename) {
-  const match = filename.match(/(\d{4})(\d{2})(\d{2})/);
-  if (match) {
-    const [, year, month, day] = match;
-    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-    if (!isNaN(date.getTime())) {
-      return date;
-    }
-  }
-  return null;
-}
-
-/**
- * Корректирует дату: 00:00-05:00 → предыдущий день
- */
-function adjustDate(date) {
-  const hours = date.getHours();
-  if (hours >= 0 && hours < 5) {
-    // Вычитаем один день
-    const adjustedDate = new Date(date);
-    adjustedDate.setDate(adjustedDate.getDate() - 1);
-    console.log(`  Корректировка даты: ${date.toISOString()} → ${adjustedDate.toISOString()} (время ${hours}:00-05:00)`);
-    return adjustedDate;
-  }
-  return date;
-}
-
-/**
- * Получает дату съёмки из EXIF или имени файла
+ * Получает дату съёмки из файла (обёртка вокруг общего парсера)
  */
 async function getFileDate(filePath) {
   try {
-    // Читаем EXIF
-    const tags = await exiftool.read(filePath);
-    
-    // Пробуем разные EXIF теги для даты
-    let dateStr = tags.DateTimeOriginal?.toString() || 
-                  tags.CreateDate?.toString() || 
-                  tags.DateTimeDigitized?.toString();
-    
-    if (dateStr) {
-      // Формат EXIF: "YYYY:MM:DD HH:MM:SS"
-      const match = dateStr.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
-      if (match) {
-        const [, year, month, day, hours, minutes, seconds] = match;
-        const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), 
-                             parseInt(hours), parseInt(minutes), parseInt(seconds));
-        
-        if (!isNaN(date.getTime())) {
-          console.log(`  EXIF дата: ${date.toISOString()}`);
-          return adjustDate(date);
-        }
-      }
-    }
-    
-    // Если нет EXIF даты, пробуем имя файла
-    console.log('  Нет EXIF даты, пробуем имя файла...');
-    const filenameDate = parseDateFromFilename(path.basename(filePath));
-    if (filenameDate) {
-      console.log(`  Дата из имени файла: ${filenameDate.toISOString()}`);
-      return adjustDate(filenameDate);
-    }
-    
-    // Если ничего не нашли, используем дату модификации файла
-    console.log('  Нет даты в имени файла, используем дату модификации...');
-    const stats = await fs.stat(filePath);
-    return adjustDate(stats.mtime);
-    
+    const date = await parseImportDate(filePath)
+    console.log(`  Дата съёмки: ${date.toISOString()}`)
+    return date
   } catch (error) {
-    console.error(`  Ошибка чтения файла ${filePath}: ${error.message}`);
-    // Используем дату модификации
-    const stats = await fs.stat(filePath);
-    return adjustDate(stats.mtime);
+    console.error(`  Ошибка чтения файла ${filePath}: ${error.message}`)
+    const stats = await fs.stat(filePath)
+    return new Date(stats.mtime)
   }
 }
 
@@ -144,6 +81,22 @@ async function scanImportDir(importPath) {
 }
 
 /**
+ * Перемещает файл с fallback copy+unlink при EXDEV
+ */
+async function safeMove(src, dest) {
+  try {
+    await fs.rename(src, dest)
+  } catch (err) {
+    if (err.code === 'EXDEV') {
+      await fs.copyFile(src, dest)
+      await fs.unlink(src)
+    } else {
+      throw err
+    }
+  }
+}
+
+/**
  * Перемещает файл в нужную папку
  */
 async function moveFile(filePath, date) {
@@ -169,10 +122,10 @@ async function moveFile(filePath, date) {
     const ext = path.extname(fileName);
     const newFileName = `${name}_${Date.now()}${ext}`;
     const newDestPath = path.join(folderPath, newFileName);
-    await fs.rename(filePath, newDestPath);
+    await safeMove(filePath, newDestPath);
     console.log(`  Перемещено: ${filePath} → ${newDestPath}`);
   } else {
-    await fs.rename(filePath, destPath);
+    await safeMove(filePath, destPath);
     console.log(`  Перемещено: ${filePath} → ${destPath}`);
   }
   

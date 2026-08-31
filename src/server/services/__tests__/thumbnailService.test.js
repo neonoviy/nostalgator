@@ -229,6 +229,65 @@ describe('ThumbnailService queue state', () => {
   })
 })
 
+// ==================== per-folder completion log ([THUMB]) ====================
+
+describe('ThumbnailService per-folder completion log', () => {
+  let thumbCalls
+
+  beforeEach(() => {
+    thumbCalls = []
+    const logger = require('../../utils/logger')
+    logger.thumb = (msg) => thumbCalls.push(msg)
+  })
+
+  afterEach(() => {
+    const logger = require('../../utils/logger')
+    delete logger.thumb
+  })
+
+  it('должен логировать [THUMB] только после завершения генерации папки', async () => {
+    const svc = createService()
+    svc.generateFileThumbnail = async () => {}
+
+    svc.queueGeneration({
+      eventId: 1,
+      year: 2026,
+      folderPath: '2026/01.07 Test',
+      filename: 'a.jpg',
+      isVideo: false,
+    })
+    svc.queueGeneration({
+      eventId: 1,
+      year: 2026,
+      folderPath: '2026/01.07 Test',
+      filename: 'b.jpg',
+      isVideo: false,
+    })
+
+    // Во время постановки в очередь лога быть не должно
+    assert.strictEqual(thumbCalls.length, 0)
+
+    await svc.processQueue()
+
+    assert.strictEqual(thumbCalls.length, 1)
+    assert.strictEqual(thumbCalls[0], '2026/01.07 Test: 2 files')
+  })
+
+  it('должен логировать [THUMB] отдельно для каждой папки', async () => {
+    const svc = createService()
+    svc.generateFileThumbnail = async () => {}
+
+    svc.queueGeneration({ eventId: 1, year: 2026, folderPath: '2026/A', filename: 'a.jpg' })
+    svc.queueGeneration({ eventId: 2, year: 2026, folderPath: '2026/B', filename: 'b.jpg' })
+
+    await svc.processQueue()
+
+    assert.strictEqual(thumbCalls.length, 2)
+    assert.ok(thumbCalls.includes('2026/A: 1 files'))
+    assert.ok(thumbCalls.includes('2026/B: 1 files'))
+  })
+})
+
 // ==================== getThumbnailsForEvent ====================
 
 describe('ThumbnailService.getThumbnailsForEvent', () => {

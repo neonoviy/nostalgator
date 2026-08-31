@@ -68,7 +68,7 @@ module.exports = (app, ctx) => {
 
         // Trigger watcher to process files
         if (ctx.watcherService && uploaded.length > 0) {
-          ctx.watcherService.processImportedFiles(importPath, userId)
+          await ctx.watcherService.processImportedFiles(importPath, userId)
         }
 
         res.success({ uploaded: uploaded.length, failed, total: files.length })

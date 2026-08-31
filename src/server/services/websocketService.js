@@ -134,8 +134,8 @@ class WebSocketService {
     this.broadcast('event:deleted', { eventId })
   }
 
-  notifyEventsChanged(source = 'system') {
-    this.broadcast('events:changed', { source })
+  notifyEventsChanged(source = 'system', eventId = null) {
+    this.broadcast('events:changed', { source, eventId })
   }
 
   // --- Готовность сервера ---

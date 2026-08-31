@@ -300,6 +300,7 @@ class ScanService {
             () => this.eventService.syncEventMedia(existingEvent.id, relativePath, uploadedById),
             { logger, maxAttempts: 3, baseDelay: 200 },
           )
+          logger.scan(`${relativePath}`)
 
           // (2) Тяжёлые очереди (превью/faces/places) перезапускаем только при
           // структурном изменении, явном выборе или полном скане.
@@ -332,7 +333,6 @@ class ScanService {
                 ...(forceThumbs ? { force: true } : {}),
               })
             }
-            logger.thumb(`THUMB ${relativePath}: ${thumbMediaFiles.length} files`)
             if (this.placeRecognitionService && forcePlaces) {
               this.placeRecognitionService.queueGeneration({
                 id: eventForQueues.id,
@@ -343,7 +343,7 @@ class ScanService {
                 ...(forcePlaces ? { force: true } : {}),
               })
             }
-            if (this.faceRecognitionService && forceFaces) {
+            if (this.faceRecognitionService && (forceFaces || this.autodetectFaces)) {
               this.faceRecognitionService.queueGeneration({
                 id: eventForQueues.id,
                 folderPath: relativePath,
@@ -410,8 +410,8 @@ class ScanService {
                 ...(forceThumbs ? { force: true } : {}),
               })
             }
-            logger.thumb(`THUMB ${relativePath}: ${thumbMediaFiles.length} files`)
             await this.eventService.syncEventMedia(result.id, relativePath, uploadedById)
+            logger.scan(`${relativePath}`)
             // Places: new event with GPS files
             if (this.placeRecognitionService && (forcePlaces || this.autodetectPlaces)) {
               this.placeRecognitionService.queueGeneration({
@@ -491,6 +491,7 @@ class ScanService {
         logger.scan(`New event created: ${result.id}`)
         // syncEventMedia already calls queueGeneration for each file
         await this.eventService.syncEventMedia(result.id, relativePath)
+        logger.scan(`${relativePath}`)
 
         if (this.thumbnailService) {
           await this.thumbnailService.processQueue()

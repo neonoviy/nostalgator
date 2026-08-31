@@ -116,7 +116,7 @@ module.exports = (app, ctx) => {
           return res.error(ERROR_CODES.NOT_FOUND, 'Event not found', 404)
         }
 
-        if (ctx.websocketService) ctx.websocketService.notifyEventsChanged('user')
+        if (ctx.websocketService) ctx.websocketService.notifyEventsChanged('user', req.validatedEventId)
 
         res.success({ ...result, renameError })
       } catch (error) {
@@ -397,7 +397,7 @@ module.exports = (app, ctx) => {
         }
 
         if (ctx.websocketService) {
-          ctx.websocketService.notifyEventsChanged('user')
+          ctx.websocketService.notifyEventsChanged('user', eventRecord ? eventRecord.id : null)
         }
 
         res.success({ hasExif: !!updatedExif, data: updatedExif, filename: decodedFilename })

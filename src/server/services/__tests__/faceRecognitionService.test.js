@@ -174,7 +174,7 @@ describe('FaceRecognitionService._loadKnownPersonsCache', () => {
 // ==================== matchFace ====================
 
 describe('FaceRecognitionService.matchFace', () => {
-  it('не должен искать в passerbyCache вообще', async () => {
+  it('должен искать в passerbyCache, если knownCache пуст', async () => {
     const prisma = createMockPrisma()
     const svc = createService(prisma)
 
@@ -192,7 +192,38 @@ describe('FaceRecognitionService.matchFace', () => {
     const passerbyCache = new Map([[2, passerbyEntry]])
 
     const result = svc.matchFace(desc, knownCache, passerbyCache)
-    assert.strictEqual(result, null, 'Не должно быть совпадений, если knownCache пуст, даже если passerbyCache имеет похожее лицо')
+    assert.ok(result, 'Должно быть совпадение в passerbyCache, если knownCache пуст')
+    assert.strictEqual(result.personId, 2)
+  })
+
+  it('должен предпочитать knownCache перед passerbyCache', async () => {
+    const prisma = createMockPrisma()
+    const svc = createService(prisma)
+
+    const desc = new Float32Array([0, 1, 0])
+    const knownEntry = {
+      id: 1,
+      participantId: 10,
+      _sum: new Float32Array([0, 2, 0]),
+      _count: 2,
+      _cachedAvg: new Float32Array([0, 1, 0]),
+      _dirty: false,
+    }
+    const passerbyEntry = {
+      id: 2,
+      participantId: null,
+      _sum: new Float32Array([0, 3, 0]),
+      _count: 3,
+      _cachedAvg: new Float32Array([0, 1, 0]),
+      _dirty: false,
+    }
+
+    const knownCache = new Map([[1, knownEntry]])
+    const passerbyCache = new Map([[2, passerbyEntry]])
+
+    const result = svc.matchFace(desc, knownCache, passerbyCache)
+    assert.ok(result)
+    assert.strictEqual(result.personId, 1, 'Должна быть выбрана knownCache персона')
   })
 })
 

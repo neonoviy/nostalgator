@@ -194,6 +194,60 @@ function _parseDateFromFilename(filename) {
   return isNaN(date.getTime()) ? null : date
 }
 
+// Simple filename date parse: YYYYMMDD at start of basename
+function _parseDateFromFilenameSimple(filename) {
+  const name = path.basename(filename)
+  const match = name.match(/^(\d{4})(\d{2})(\d{2})/)
+  if (!match) return null
+
+  const [, year, month, day] = match
+  const date = new Date(Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day)))
+  return isNaN(date.getTime()) ? null : date
+}
+
+// Apply late-night adjustment: 00:00-05:00 local → previous day
+function _adjustLateNight(date) {
+  const hours = date.getUTCHours()
+  if (hours >= 0 && hours < 5) {
+    const adjusted = new Date(date)
+    adjusted.setUTCDate(adjusted.getUTCDate() - 1)
+    return adjusted
+  }
+  return date
+}
+
+// Parse import date from file: EXIF → structured filename → mtime → now
+// Returns a Date object (UTC) suitable for folder path construction.
+async function parseImportDate(filePath) {
+  const exiftool = require('exiftool-vendored').exiftool
+
+  try {
+    const tags = await exiftool.read(filePath)
+
+    const dateField = tags.DateTimeOriginal || tags.CreateDate || tags.DateTimeDigitized
+    if (dateField) {
+      const parsed = _parseExifDateAsUtc(dateField)
+      if (parsed) return _adjustLateNight(parsed)
+    }
+  } catch (err) {
+    // exiftool read failed — fall through to filename/mtime
+  }
+
+  const filenameDate = _parseDateFromFilename(filePath) || _parseDateFromFilenameSimple(filePath)
+  if (filenameDate) return _adjustLateNight(filenameDate)
+
+  try {
+    const stats = await fs.stat(filePath)
+    if (stats.mtime && !isNaN(new Date(stats.mtime).getTime())) {
+      return _adjustLateNight(new Date(stats.mtime))
+    }
+  } catch (err) {
+    // stat failed — use now
+  }
+
+  return _adjustLateNight(new Date())
+}
+
 // Extract EXIF data for Media record
 // Returns: { capturedAt, latitude, longitude, width, height, duration }
 // Skip videos — they don't have DateTimeOriginal in EXIF
@@ -331,4 +385,5 @@ module.exports = {
   MEDIA_EXTENSIONS,
   VIDEO_EXTENSIONS,
   IMAGE_EXTENSIONS,
+  parseImportDate,
 }

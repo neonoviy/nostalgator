@@ -5,7 +5,9 @@ node_modules/
 Originals/
 Originals-small/
 Thumbnails/
+Thumbs/
 Import/
+
 
 test-e2e/
 prisma/migrations/

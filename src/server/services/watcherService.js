@@ -1,6 +1,6 @@
 const fs = require('fs').promises
 const path = require('path')
-const { normalizePath, isMediaFile } = require('../utils/fileUtils')
+const { normalizePath, isMediaFile, parseImportDate } = require('../utils/fileUtils')
 const logger = require('../utils/logger')
 const { createRecursiveWatcher } = require('./recursiveWatcher')
 
@@ -40,7 +40,6 @@ class WatcherService {
     this.isRenaming = false
     this.isEnabled = false
     this.suppressedPaths = new Map()
-    this.exiftool = require('exiftool-vendored').exiftool
   }
 
   /**
@@ -187,6 +186,9 @@ class WatcherService {
     // Используем debounce (вдруг файл ещё копируется)
     this.debounce(`import_file_${filePath}`, async () => {
       try {
+        if (!(await fs.access(filePath).then(() => true).catch(() => false))) {
+          return
+        }
         const movedTo = await this.processImportFile(filePath)
         if (movedTo) {
           logger.success(`Imported file: ${path.basename(movedTo)}`)
@@ -288,7 +290,8 @@ class WatcherService {
           }
         }
 
-        if (movedFiles.length === files.length) {
+        const remaining = await this.scanImportDir(dirPath)
+        if (remaining.length === 0) {
           try {
             await fs.rm(dirPath, { recursive: true, force: true })
             logger.success(`Folder removed: ${path.basename(dirPath)}`)
@@ -327,54 +330,11 @@ class WatcherService {
   // Обработка отдельного файла из Import
   async processImportFile(filePath) {
     try {
-      // Читаем EXIF дату
-      const tags = await this.exiftool.read(filePath)
-
-      // Для фронтенда пишем детали, в консоль — только если DEBUG
       const logDetail = (msg) => logger.scanDetail(msg, null)
 
       logDetail(`EXIF read for ${path.basename(filePath)}`)
 
-      let date
-
-      const dateField = tags.DateTimeOriginal || tags.CreateDate || tags.DateTimeDigitized
-      if (dateField) {
-        logDetail(`EXIF date found: ${dateField}`)
-
-        if (dateField.year && dateField.month && dateField.day) {
-          const year = parseInt(dateField.year)
-          const month = parseInt(dateField.month) - 1
-          const day = parseInt(dateField.day)
-          const hours = parseInt(dateField.hour || 0)
-          const minutes = parseInt(dateField.minute || 0)
-          const seconds = parseInt(dateField.second || 0)
-
-          date = new Date(year, month, day, hours, minutes, seconds)
-          logDetail(`Parsed EXIF date: ${date.toISOString()}`)
-
-          // Корректировка: 00:00-05:00 → предыдущий день
-          if (hours >= 0 && hours < 5) {
-            date.setDate(date.getDate() - 1)
-            logDetail(`Time adjusted (00-05), new date: ${date.toISOString()}`)
-          }
-        }
-      }
-
-      if (!date) {
-        const filename = path.basename(filePath)
-        logDetail(`No EXIF date, trying filename: ${filename}`)
-        const match = filename.match(/(\d{4})(\d{2})(\d{2})/)
-        if (match) {
-          logDetail(`Date found in filename: ${match[0]}`)
-          date = new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]))
-        }
-      }
-
-      if (!date) {
-        logDetail(`No date found, using current date`)
-        date = new Date()
-      }
-
+      const date = await parseImportDate(filePath)
       logDetail(`Final date for ${path.basename(filePath)}: ${date.toISOString()}`)
 
       const year = date.getFullYear()

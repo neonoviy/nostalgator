@@ -1015,7 +1015,7 @@ class EventService {
     // Delete event from DB
     await this.deleteEvent(eventId)
 
-    if (this.websocketService) this.websocketService.notifyEventsChanged('user')
+    if (this.websocketService) this.websocketService.notifyEventsChanged('user', eventId)
   }
 
   /**
@@ -1194,7 +1194,7 @@ class EventService {
       data: { mediaCount: { decrement: 1 } },
     })
 
-    if (this.websocketService) this.websocketService.notifyEventsChanged('user')
+    if (this.websocketService) this.websocketService.notifyEventsChanged('user', event.id)
 
     if (updatedEvent.mediaCount === 0) {
       const thumbnailsPath = path.join(

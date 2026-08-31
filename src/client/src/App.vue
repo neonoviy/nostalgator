@@ -876,6 +876,7 @@
   const firstLaunchFlowDone = ref(false)
   const firstLaunchLoginHint = ref(false)
   const saveResetKey = ref(0)
+  const lastSavedEventId = ref(null)
 
   // Composable for saving events
   const {
@@ -890,6 +891,12 @@
   }
 
   const handleSaveEvent = async (data) => {
+    lastSavedEventId.value = data.id
+    setTimeout(() => {
+      if (lastSavedEventId.value === data.id) {
+        lastSavedEventId.value = null
+      }
+    }, 5000)
     const ok = await saveEventTags(data)
     if (ok) saveResetKey.value++
   }
@@ -1050,7 +1057,17 @@
   // WebSocket for event updates
   // ============================================
 
-  const onEventsChanged = () => {
+  const onEventsChanged = (e) => {
+    const detail = (e && e.detail) || {}
+    const eventId = detail.eventId
+
+    if (eventId && eventId === lastSavedEventId.value) {
+      lastSavedEventId.value = null
+      eventsState.loadTagCounts()
+      clustersState.reload()
+      return
+    }
+
     loadEvents(false)
     eventsState.loadTagCounts()
     clustersState.reload()

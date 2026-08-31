@@ -1084,7 +1084,19 @@ class FaceRecognitionService {
         logger.warn(`Skipping corrupted descriptor for Person #${person.id}: ${e.message}`)
       }
     }
-    if (best) return best
+
+    for (const person of passerbyCache.values()) {
+      if (!person._sum) continue
+      try {
+        const avg = this._getPersonAverage(person)
+        const sim = this._cosineSimilarityFloat32(descriptor, avg)
+        if (sim > this.FACE_MATCH_THRESHOLD && (!best || sim > best.similarity)) {
+          best = { personId: person.id, similarity: sim }
+        }
+      } catch (e) {
+        logger.warn(`Skipping corrupted descriptor for Person #${person.id}: ${e.message}`)
+      }
+    }
 
     return best
   }

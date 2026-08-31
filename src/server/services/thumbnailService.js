@@ -31,6 +31,7 @@ class ThumbnailService {
     this.MAX_CONCURRENT = 2
     this.waiters = [] // Array for waiting for queue completion
     this._backgroundRunning = false // Flag for continuous background loop
+    this.folderProgress = new Map() // folderPath -> { total, pending }
   }
 
   /** Check if the queue is active */
@@ -46,6 +47,13 @@ class ThumbnailService {
    */
   queueGeneration(info, options = {}) {
     this.queue.push({ ...info, force: options.force === true })
+    // Track per-folder progress so we can log completion once per folder.
+    if (info.folderPath) {
+      const p = this.folderProgress.get(info.folderPath) || { total: 0, pending: 0 }
+      p.total += 1
+      p.pending += 1
+      this.folderProgress.set(info.folderPath, p)
+    }
     // Do NOT send WS here — _continuousLoop does it on start/stop
     // Each queueGeneration call was sending thumbnails:true → indicator blinking
     if (!this._backgroundRunning) {
@@ -125,6 +133,17 @@ class ThumbnailService {
     } finally {
       this.processingCount--
       this.processedCount++
+      const fp = item.folderPath
+      if (fp) {
+        const p = this.folderProgress.get(fp)
+        if (p) {
+          p.pending -= 1
+          if (p.pending <= 0) {
+            this.folderProgress.delete(fp)
+            logger.thumb(`${fp}: ${p.total} files`)
+          }
+        }
+      }
     }
   }
 
