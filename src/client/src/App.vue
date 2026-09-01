@@ -165,6 +165,7 @@
     checkDbHasEvents,
     loadEvents,
     updateKey,
+    updateEventInState,
   } = eventsState
 
   const scanState = useScan(authState.isAdmin)
@@ -1057,15 +1058,44 @@
   // WebSocket for event updates
   // ============================================
 
-  const onEventsChanged = (e) => {
+  const findEventInState = (eventId) => {
+    for (const year in eventsByYear) {
+      const found = eventsByYear[year].events.find((e) => Number(e.id) === Number(eventId))
+      if (found) return found
+    }
+    return null
+  }
+
+  const onEventsChanged = async (e) => {
     const detail = (e && e.detail) || {}
     const eventId = detail.eventId
 
-    if (eventId && eventId === lastSavedEventId.value) {
+    if (eventId && Number(eventId) === Number(lastSavedEventId.value)) {
       lastSavedEventId.value = null
       eventsState.loadTagCounts()
-      clustersState.reload()
       return
+    }
+
+    if (eventId) {
+      const existingEvent = findEventInState(eventId)
+      if (existingEvent) {
+        try {
+          const res = await fetch(`/api/events/${eventId}`, {
+            headers: { Authorization: token.value ? `Bearer ${token.value}` : '' },
+          })
+          if (res.ok) {
+            const data = await res.json()
+            const updatedEvent = data.success ? data.data : data
+            if (updatedEvent) {
+              updateEventInState(updatedEvent)
+              eventsState.loadTagCounts()
+              return
+            }
+          }
+        } catch (err) {
+          console.error('Failed to fetch updated event:', err)
+        }
+      }
     }
 
     loadEvents(false)

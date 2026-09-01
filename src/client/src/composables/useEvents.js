@@ -423,6 +423,41 @@ export function useEvents(tokenRef = null, userRef = null) {
     }
   }
 
+  const updateEventInState = (updatedEvent) => {
+    let foundYear = null
+    let foundIndex = -1
+
+    for (const year in eventsByYear) {
+      const idx = eventsByYear[year].events.findIndex((e) => Number(e.id) === Number(updatedEvent.id))
+      if (idx !== -1) {
+        foundYear = year
+        foundIndex = idx
+        break
+      }
+    }
+
+    if (!foundYear) {
+      const newYear = updatedEvent.year?.toString()
+      if (!newYear) return
+      if (!eventsByYear[newYear]) eventsByYear[newYear] = { events: [], hasMore: true }
+      eventsByYear[newYear].events.push(updatedEvent)
+      sortEvents(eventsByYear[newYear].events)
+      return
+    }
+
+    const newYear = updatedEvent.year?.toString()
+    if (foundYear === newYear || !newYear) {
+      Object.assign(eventsByYear[foundYear].events[foundIndex], updatedEvent)
+      return
+    }
+
+    eventsByYear[foundYear].events.splice(foundIndex, 1)
+    if (!eventsByYear[newYear]) eventsByYear[newYear] = { events: [], hasMore: true }
+    eventsByYear[newYear].events.push(updatedEvent)
+    sortEvents(eventsByYear[foundYear].events)
+    sortEvents(eventsByYear[newYear].events)
+  }
+
   return {
     years,
     eventsByYear,
@@ -454,5 +489,6 @@ export function useEvents(tokenRef = null, userRef = null) {
     deleteTag,
     syncSelectedFromUrlFilters,
     updateEventParticipants,
+    updateEventInState,
   }
 }

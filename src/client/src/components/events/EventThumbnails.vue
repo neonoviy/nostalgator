@@ -260,18 +260,25 @@
       loadThumbnails()
     }
     window.addEventListener('media-deleted', onMediaDeleted)
-    window.addEventListener('ws:events-changed', loadThumbnails)
+    window.addEventListener('ws:events-changed', onEventsChanged)
   })
 
   onBeforeUnmount(() => {
     window.removeEventListener('media-deleted', onMediaDeleted)
-    window.removeEventListener('ws:events-changed', loadThumbnails)
+    window.removeEventListener('ws:events-changed', onEventsChanged)
   })
 
   const onMediaDeleted = (e) => {
     const mediaId = e.detail?.mediaId
     if (mediaId != null) {
       displayedThumbnails.value = displayedThumbnails.value.filter((thumb) => thumb.id !== mediaId)
+    }
+  }
+
+  const onEventsChanged = (e) => {
+    const eventId = e.detail?.eventId
+    if (!eventId || Number(eventId) === Number(props.eventId)) {
+      loadThumbnails()
     }
   }
 </script>

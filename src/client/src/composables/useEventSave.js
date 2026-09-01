@@ -97,11 +97,6 @@ export function useEventSave(token, eventsByYear, eventsState, showEditModal, lo
 
   // ---- Internal methods ----
 
-  const _replaceIfChanged = (current, next) => {
-    if (current.length !== next.length) return next
-    return current.every((v, i) => v === next[i]) ? current : next
-  }
-
   // Helper function for year sorting
   const _sortYear = (year) => {
     if (eventsByYear[year]) {
@@ -116,7 +111,7 @@ export function useEventSave(token, eventsByYear, eventsState, showEditModal, lo
     let foundIndex = -1
 
     for (const year in eventsByYear) {
-      const idx = eventsByYear[year].events.findIndex((e) => e.id === updatedEvent.id)
+      const idx = eventsByYear[year].events.findIndex((e) => Number(e.id) === Number(updatedEvent.id))
       if (idx !== -1) {
         foundYear = year
         foundIndex = idx
@@ -301,49 +296,11 @@ export function useEventSave(token, eventsByYear, eventsState, showEditModal, lo
     }
 
     const responseData = await res.json()
-    const {
-      event: updatedEvent,
-      tags,
-      cleanup,
-    } = responseData.success ? responseData.data : responseData
+    const { event: updatedEvent } = responseData.success ? responseData.data : responseData
     if (!updatedEvent) throw new Error('Server returned no event')
 
     // Update event in local state (accounting for year change if date changed)
     _updateEventInState(updatedEvent)
-
-    // Update filters
-    if (tags) {
-      eventsStateRef.places.value = tags.places
-      eventsStateRef.eventTypes.value = tags.eventTypes
-      eventsStateRef.people.value = tags.participants
-      eventsStateRef.tags.value = tags.tags
-
-      const availablePlaces = tags.places.map((p) => p.name)
-      const availableEventTypes = tags.eventTypes.map((tag) => tag.type)
-      const availableParticipants = tags.participants.map((p) => p.name)
-      const availableTags = tags.tags.map((tag) => tag.name)
-
-      eventsStateRef.selectedYears.value = _replaceIfChanged(
-        eventsStateRef.selectedYears.value,
-        eventsStateRef.selectedYears.value.filter((y) => eventsStateRef.years.value.includes(y)),
-      )
-      eventsStateRef.selectedPlaces.value = _replaceIfChanged(
-        eventsStateRef.selectedPlaces.value,
-        eventsStateRef.selectedPlaces.value.filter((p) => availablePlaces.includes(p)),
-      )
-      eventsStateRef.selectedEventTypes.value = _replaceIfChanged(
-        eventsStateRef.selectedEventTypes.value,
-        eventsStateRef.selectedEventTypes.value.filter((tag) => availableEventTypes.includes(tag)),
-      )
-      eventsStateRef.selectedParticipants.value = _replaceIfChanged(
-        eventsStateRef.selectedParticipants.value,
-        eventsStateRef.selectedParticipants.value.filter((p) => availableParticipants.includes(p)),
-      )
-      eventsStateRef.selectedTags.value = _replaceIfChanged(
-        eventsStateRef.selectedTags.value,
-        eventsStateRef.selectedTags.value.filter((tag) => availableTags.includes(tag)),
-      )
-    }
   }
 
   return { saveEvent, deleteEvent, saving }
