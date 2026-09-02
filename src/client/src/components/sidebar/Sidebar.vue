@@ -1,8 +1,5 @@
 <template>
   <aside class="sidebar" :class="{ opened: isSidebarOpen }">
-    <AppButton class="sidebar__toggle-btn" @click="isSidebarOpen = !isSidebarOpen" size="lg">
-      {{ isSidebarOpen ? '✕' : '☰' }}
-    </AppButton>
     <div class="sidebar-wrapper">
       <Dropdown
         v-model="langMenuOpen"
@@ -33,6 +30,9 @@
       </Dropdown>
       <!-- Search and settings -->
       <div class="sidebar__header">
+        <AppButton class="sidebar__toggle-btn" @click="isSidebarOpen = !isSidebarOpen" size="lg">
+          {{ isSidebarOpen ? '✕' : '☰' }}
+        </AppButton>
         <SearchBar />
         <div class="sidebar__settings">
           <Dropdown

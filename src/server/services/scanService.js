@@ -343,7 +343,7 @@ class ScanService {
                 ...(forcePlaces ? { force: true } : {}),
               })
             }
-            if (this.faceRecognitionService && (forceFaces || this.autodetectFaces)) {
+            if (this.faceRecognitionService && forceFaces) {
               this.faceRecognitionService.queueGeneration({
                 id: eventForQueues.id,
                 folderPath: relativePath,

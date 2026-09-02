@@ -8,6 +8,13 @@
   line-height: 1.4;
 }
 
+@media screen and (max-width: 1024px) {
+  .hint-box,
+  .tippy-box {
+    display: none !important;
+  }
+}
+
 .hint-box--info {
   background: rgba(33, 150, 243, 0.1);
   border: 1px solid rgba(33, 150, 243, 0.35);

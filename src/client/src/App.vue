@@ -946,6 +946,13 @@
     actualTheme,
     (theme) => {
       document.body.setAttribute('data-theme', theme)
+      const themeColorMeta = document.querySelector('meta[name="theme-color"]')
+      if (themeColorMeta) {
+        themeColorMeta.setAttribute(
+          'content',
+          theme === 'dark' ? '#121212' : '#f5f5f2',
+        )
+      }
     },
     { immediate: true },
   )

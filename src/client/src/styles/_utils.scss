@@ -1,12 +1,17 @@
 @use 'variables' as *;
 @use 'mixins' as *;
+html [data-theme='dark'],
+body [data-theme='dark'] {
+  color-scheme: dark;
+  background-color: #111;
+}
 
 html,
 body {
-  min-height: 100dvh;
+  min-height: 100vh;
   height: 100%;
   margin: 0;
-  background-color: var(--bg-low);
+  background-color: #f9faf8;
   color: var(--color);
   overscroll-behavior-y: none;
 }

@@ -82,7 +82,7 @@
 .event-thumbnails:after {
   content: '';
   flex-grow: 999999999;
-  min-width: 300px;
+  min-width: 50px;
   height: 0;
 }
 
@@ -91,7 +91,7 @@
   margin-right: 5px;
   vertical-align: top;
   flex: 1 1 auto;
-  max-width: 32%;
+  // max-width: 32%;
 
   a {
     // display: inline-block;
@@ -158,6 +158,13 @@
 
   &.d-none {
     display: none !important;
+  }
+}
+
+@media screen and (max-width: 720px) {
+  .thumbnail img,
+  .thumbnail .show-more-btn {
+    height: 80px;
   }
 }
 

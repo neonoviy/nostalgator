@@ -70,9 +70,9 @@
   }
 
   &__toggle-btn {
-    position: absolute;
-    margin-left: -54px;
-    padding: 14px 20px !important;
+    // position: absolute;
+    // margin-left: -54px;
+    padding: 14px 10px !important;
     background: transparent !important;
     z-index: 2;
     box-shadow: none !important;
@@ -85,7 +85,7 @@
   .sidebar {
     position: fixed;
     top: 0;
-    right: -300px;
+    right: -400px;
     z-index: 2;
     height: 100vh;
     box-shadow: $shadow-lg;
@@ -94,16 +94,25 @@
   .sidebar.opened {
     right: 0px;
     max-width: 100%;
-    padding-left: 42px;
+    // padding-left: 42px;
   }
 
   .sidebar__toggle-btn {
     display: block !important;
   }
 
-  .sidebar.opened .sidebar__toggle-btn {
-    margin-top: 12px;
-    margin-left: -42px;
+  .sidebar__toggle-btn {
+    // margin-top: 12px;
+    // margin-left: -42px;
+    position: fixed !important;
+    bottom: 64px;
+    right: var(--spacing-md);
+    background: var(--primary) !important;
+    color: var(--bg) !important;
+    width: 64px;
+    height: 64px;
+    border-radius: 32px !important;
+    box-shadow: $shadow-md !important;
   }
 }
 
