@@ -51,6 +51,14 @@
             <div class="dropdown-menu-content">
               <div v-if="isAuthenticated" class="dropdown-menu-user">{{ user.username }}</div>
               <a
+                v-if="isAuthenticated && canUpload"
+                class="dropdown-menu-link"
+                href="#"
+                @click.prevent="openFilePicker"
+              >
+                {{ $t('sidebar.upload') }}
+              </a>
+              <a
                 v-if="isAuthenticated && !isAdmin"
                 class="dropdown-menu-link"
                 href="#"
@@ -82,6 +90,14 @@
               </div>
             </div>
           </Dropdown>
+          <input
+            ref="fileInput"
+            type="file"
+            class="sidebar__upload-input"
+            multiple
+            :accept="acceptAttr"
+            @change="onFilesPicked"
+          />
         </div>
       </div>
 
@@ -120,6 +136,8 @@
   import SettingsModal from '../settings/SettingsModal.vue'
   import AppButton from '../ui/AppButton.vue'
   import DarkmodeMenu from '../ui/DarkmodeMenu.vue'
+  import { uploadFiles } from '../../composables/useFileUpload.js'
+  import { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from '../../config.js'
 
   const { locale, t } = useI18n()
 
@@ -131,6 +149,26 @@
   const userMenuOpen = ref(false)
   const langMenuOpen = ref(false)
   const showProfileModal = ref(false)
+  const fileInput = ref(null)
+
+  // Same gating as the drag-drop overlay: only users with upload rights see the button.
+  const canUpload = computed(() => !!user.value?.canUpload)
+
+  // Build the <input type="file" accept="..."> attribute from the shared extension lists.
+  const acceptAttr = computed(() => [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS].join(','))
+
+  const openFilePicker = () => {
+    fileInput.value?.click()
+  }
+
+  const onFilesPicked = (e) => {
+    const list = e.target?.files
+    if (list && list.length > 0) {
+      uploadFiles(Array.from(list))
+    }
+    // Reset so picking the same file again still fires the change event.
+    e.target.value = ''
+  }
 
   const currentLang = computed(() => (locale.value === 'ru' ? 'RU' : 'EN'))
 

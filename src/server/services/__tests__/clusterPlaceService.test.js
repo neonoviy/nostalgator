@@ -209,6 +209,45 @@ describe('ClusterPlaceService.associateClustersWithPolygons', () => {
     ])
     assert.deepStrictEqual(result, [])
   })
+
+  it('должен возвращать все места, в которые попадает кластер, включая уже связанные', async () => {
+    const prisma = createMockPrisma()
+    const polygonPerm = {
+      type: 'Polygon',
+      coordinates: [[[37.55, 55.7], [37.55, 55.8], [37.65, 55.8], [37.65, 55.7], [37.55, 55.7]]],
+    }
+    const polygonGatchinskaya = {
+      type: 'Polygon',
+      coordinates: [[[37.58, 55.72], [37.58, 55.78], [37.62, 55.78], [37.62, 55.72], [37.58, 55.72]]],
+    }
+    prisma._seed(
+      [
+        { id: 1, name: 'Пермь', polygon: JSON.stringify(polygonPerm) },
+        { id: 2, name: 'Гатчинская', polygon: JSON.stringify(polygonGatchinskaya) },
+      ],
+      [{ id: 1, latitude: 55.75, longitude: 37.6 }],
+      [{ clusterId: 1, placeId: 2 }],
+    )
+    const tagService = createMockTagService()
+    const svc = new ClusterPlaceService(prisma, tagService)
+
+    const result = await svc.associateClustersWithPolygons([
+      { id: 1, latitude: 55.75, longitude: 37.6 },
+    ])
+
+    assert.ok(result.placeIds.includes(1), 'кластер внутри Пермь — место должно быть возвращено')
+    assert.ok(
+      result.placeIds.includes(2),
+      'кластер внутри Гатчинской, даже при существующей связи — место должно быть возвращено',
+    )
+    assert.ok(result.clusterIds.includes(1))
+    const store = prisma._getStore()
+    assert.strictEqual(
+      store.clusterPlaces.filter((cp) => cp.clusterId === 1 && cp.placeId === 2).length,
+      1,
+      'не должно создаваться дублирующей связи для уже существующей',
+    )
+  })
 })
 
 describe('ClusterPlaceService.addClusterPlace', () => {

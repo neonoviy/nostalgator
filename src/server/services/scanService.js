@@ -477,6 +477,9 @@ class ScanService {
         return
       }
 
+      const settings = this.settingsService ? await this.settingsService.getAllSettings() : null
+      const scanAllowedGroupIds = settings?.scanAllowedGroupIds || null
+
       const eventData = {
         date: parsed.date,
         title: dirName,
@@ -484,6 +487,7 @@ class ScanService {
         year: parseInt(yearName),
         mediaCount: 0,
         lastScannedAt: new Date(),
+        allowedGroupIds: scanAllowedGroupIds ? JSON.stringify(scanAllowedGroupIds) : null,
       }
 
       const result = await this.eventService.upsertEvent(eventData)
@@ -553,7 +557,16 @@ class ScanService {
         return
       }
 
-      await this.eventService.prisma.event.delete({ where: { id: event.id } })
+      try {
+        await this.eventService.prisma.event.delete({ where: { id: event.id } })
+      } catch (err) {
+        if (err.code === 'P2025') {
+          logger.warn(`Event ${event.id} already removed from DB during delete, skipping`)
+          if (this.websocketService) this.websocketService.notifyEventDeleted(event.id)
+          return
+        }
+        throw err
+      }
       if (this.websocketService) this.websocketService.notifyEventDeleted(event.id)
     }
   }

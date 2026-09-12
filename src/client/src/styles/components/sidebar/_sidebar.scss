@@ -40,6 +40,10 @@
     }
   }
 
+  &__upload-input {
+    display: none;
+  }
+
   &__avatar {
     display: flex;
     align-items: center;

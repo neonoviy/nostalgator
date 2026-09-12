@@ -1,5 +1,4 @@
 const path = require('path')
-const fs = require('fs').promises
 const { ERROR_CODES } = require('../middleware/responseHandler')
 const logger = require('../utils/logger')
 
@@ -28,7 +27,6 @@ module.exports = (app, ctx) => {
 
         const importPath =
           process.env.IMPORT_PATH || path.join(__dirname, '..', '..', '..', 'Import')
-        await fs.mkdir(importPath, { recursive: true })
 
         const files = req.files
         if (!files || files.length === 0) {
@@ -36,37 +34,12 @@ module.exports = (app, ctx) => {
         }
 
         const userId = req.user?.id || null
-
-        const uploaded = []
+        // Files are already on disk in IMPORT_PATH (multer diskStorage). The
+        // watcher will move them into Originals/ based on EXIF/filename dates.
+        // Anything still in IMPORT_PATH after that is either failed or stuck.
+        const uploaded = files.map((f) => f.originalname)
         const failed = []
 
-        for (const file of files) {
-          try {
-            // Check for duplicates — add _1, _2, etc.
-            let destPath = path.join(importPath, file.originalname)
-            let counter = 1
-            const ext = path.extname(file.originalname)
-            const name = path.basename(file.originalname, ext)
-
-            while (true) {
-              try {
-                await fs.access(destPath)
-                destPath = path.join(importPath, `${name}_${counter}${ext}`)
-                counter++
-              } catch {
-                break
-              }
-            }
-
-            await fs.writeFile(destPath, file.buffer)
-            uploaded.push(file.originalname)
-          } catch (err) {
-            logger.error(`Failed to save file ${file.originalname}: ${err.message}`)
-            failed.push(file.originalname)
-          }
-        }
-
-        // Trigger watcher to process files
         if (ctx.watcherService && uploaded.length > 0) {
           await ctx.watcherService.processImportedFiles(importPath, userId)
         }

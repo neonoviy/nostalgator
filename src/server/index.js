@@ -23,7 +23,45 @@ const { responseMiddleware } = require('./middleware/responseHandler')
 const authMiddleware = require('./middleware/auth')
 const { requireAuth, requireAdmin, requireUploader } = authMiddleware
 const multer = require('multer')
-const upload = multer() // memory storage
+// Stream uploaded files directly into IMPORT_PATH (the Import folder doubles
+// as the multer staging directory and the watcher's input directory). This
+// avoids buffering the entire payload in memory before writing it to disk.
+const UPLOAD_IMPORT_PATH =
+  process.env.IMPORT_PATH || path.join(__dirname, '..', '..', 'Import')
+fs.mkdirSync(UPLOAD_IMPORT_PATH, { recursive: true })
+
+function resolveUniqueDest(dir, originalName) {
+  const ext = path.extname(originalName)
+  const base = path.basename(originalName, ext)
+  let candidate = path.join(dir, originalName)
+  let counter = 1
+  // fs.existsSync is acceptable here: the destination directory is local and
+  // this runs only once per request while the upload stream is being placed.
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(dir, `${base}_${counter}${ext}`)
+    counter++
+  }
+  return candidate
+}
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, UPLOAD_IMPORT_PATH),
+    filename: (_req, file, cb) => {
+      try {
+        cb(null, path.basename(resolveUniqueDest(UPLOAD_IMPORT_PATH, file.originalname)))
+      } catch (err) {
+        cb(err)
+      }
+    },
+  }),
+  limits: {
+    fileSize: process.env.UPLOAD_MAX_FILE_SIZE
+      ? parseInt(process.env.UPLOAD_MAX_FILE_SIZE, 10)
+      : undefined,
+    files: process.env.UPLOAD_MAX_FILES ? parseInt(process.env.UPLOAD_MAX_FILES, 10) : undefined,
+  },
+})
 const swaggerJSDoc = require('swagger-jsdoc')
 const swaggerUi = require('swagger-ui-express')
 const logger = require('./utils/logger')
@@ -552,7 +590,7 @@ async function initializeApp() {
     // Create default admin
     try {
       const existingAdmin = await authService.prisma.user.findFirst({
-        where: { username: 'admin' },
+        where: { role: 'admin' },
       })
 
       if (!existingAdmin) {

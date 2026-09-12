@@ -224,22 +224,24 @@ class ClusterPlaceService {
         const turfPolygon = await ClusterPlaceService.createTurfPolygon(polygonData)
 
         for (const cluster of clusters) {
+          if (!cluster.latitude || !cluster.longitude) continue
+
           const existingLink = await this.prisma.clusterPlace.findFirst({
             where: { clusterId: cluster.id, placeId: place.id },
           })
 
-          if (!existingLink && cluster.latitude && cluster.longitude) {
-            if (
-              await ClusterPlaceService.isPointInPolygon(
-                cluster.latitude,
-                cluster.longitude,
-                turfPolygon,
-              )
-            ) {
+          if (
+            await ClusterPlaceService.isPointInPolygon(
+              cluster.latitude,
+              cluster.longitude,
+              turfPolygon,
+            )
+          ) {
+            if (!existingLink) {
               await this.addClusterPlace(cluster.id, place.id)
-              associatedPlaceIds.add(place.id)
-              associatedClusterIds.add(cluster.id)
             }
+            associatedPlaceIds.add(place.id)
+            associatedClusterIds.add(cluster.id)
           }
         }
       } catch (error) {

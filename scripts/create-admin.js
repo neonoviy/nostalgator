@@ -9,7 +9,7 @@ async function createAdminUser(authService) {
     
     // Проверяем, существует ли уже админ
     const existingAdmin = await authService.prisma.user.findFirst({
-      where: { username: 'admin' }
+      where: { role: 'admin' }
     });
     
     if (existingAdmin) {

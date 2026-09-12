@@ -124,45 +124,56 @@ function _parseGpsValue(value, ref) {
   return isNaN(num) ? null : num
 }
 
-// Parse capture date from EXIF DateTimeOriginal or filename
-// ExifDateTime from exiftool-vendored has raw .year/.month/.day/.hour/.minute/.second
-// We extract those components and store as UTC (matching the EXIF local time in filename).
-function _parseExifDateAsUtc(dateField) {
+// Parse capture date from EXIF DateTimeOriginal or filename.
+// The application must be timezone-agnostic: EXIF DateTimeOriginal is local
+// civil time on the camera clock and must be preserved as-is. We construct
+// the Date via the (year, month, day, hour, ...) overload so its UTC instant
+// is timezone-dependent, but getHours()/getDate()/getMonth()/getFullYear()
+// always return the exact components from EXIF — no conversion, no shift.
+function _parseExifDateAsLocal(dateField) {
   if (dateField == null) return null
 
   // ExifDateTime object from exiftool-vendored: has .year, .month, etc.
   if (typeof dateField === 'object' && dateField.year != null && dateField.month != null) {
     const d = new Date(
-      Date.UTC(
-        parseInt(dateField.year),
-        parseInt(dateField.month) - 1,
-        parseInt(dateField.day) || 1,
-        parseInt(dateField.hour) || 0,
-        parseInt(dateField.minute) || 0,
-        parseInt(dateField.second) || 0,
-        dateField.millisecond != null ? parseInt(dateField.millisecond) : 0,
-      ),
+      parseInt(dateField.year),
+      parseInt(dateField.month) - 1,
+      parseInt(dateField.day) || 1,
+      parseInt(dateField.hour) || 0,
+      parseInt(dateField.minute) || 0,
+      parseInt(dateField.second) || 0,
+      dateField.millisecond != null ? parseInt(dateField.millisecond) : 0,
     )
     return isNaN(d.getTime()) ? null : d
   }
 
-  // Regular Date — use as-is
-  if (dateField instanceof Date) return dateField
+  // Regular Date — read local components and rebuild as local to strip any TZ
+  // influence from the source.
+  if (dateField instanceof Date) {
+    return new Date(
+      dateField.getFullYear(),
+      dateField.getMonth(),
+      dateField.getDate(),
+      dateField.getHours(),
+      dateField.getMinutes(),
+      dateField.getSeconds(),
+      dateField.getMilliseconds(),
+    )
+  }
 
   // String — try parsing EXIF format "YYYY:MM:DD HH:MM:SS"
   if (typeof dateField === 'string') {
-    const match = dateField.match(/^(\d{4}):(\d{2}):(\d{2})[ ](\d{2}):(\d{2}):(\d{2})(?:[.,](\d+))?(?:Z|[+-]\d{2}:?\d{2})?$/)
+    const match = dateField.match(/^(\d{4}):(\d{2}):(\d{2})[ ](\d{2}):(\d{2}):(\d{2})(?:[.,](\d+))?$/)
     if (match) {
+      const ms = match[7] ? parseInt(match[7].slice(0, 3).padEnd(3, '0')) : 0
       const d = new Date(
-        Date.UTC(
-          parseInt(match[1]),
-          parseInt(match[2]) - 1,
-          parseInt(match[3]),
-          parseInt(match[4]),
-          parseInt(match[5]),
-          parseInt(match[6]),
-          match[7] ? parseInt(match[7].slice(0, 3).padEnd(3, '0')) : 0,
-        ),
+        parseInt(match[1]),
+        parseInt(match[2]) - 1,
+        parseInt(match[3]),
+        parseInt(match[4]),
+        parseInt(match[5]),
+        parseInt(match[6]),
+        ms,
       )
       return isNaN(d.getTime()) ? null : d
     }
@@ -173,7 +184,8 @@ function _parseExifDateAsUtc(dateField) {
 
 // Parse capture date from filename (Samsung/Canon/Sony/Nikon style)
 // Patterns: IMG_YYYYMMDD_HHMMSS, DSC_YYYYMMDD_HHMMSS, etc.
-// Uses Date.UTC so the ISO string matches the filename time.
+// The numbers in the filename are local civil time on the camera clock —
+// we store them as local components, not UTC.
 function _parseDateFromFilename(filename) {
   const name = path.basename(filename)
   const match = name.match(/_(\d{4})(\d{2})(\d{2})[_\.](\d{2})(\d{2})(\d{2})/)
@@ -181,14 +193,12 @@ function _parseDateFromFilename(filename) {
 
   const [, year, month, day, hour, minute, second] = match
   const date = new Date(
-    Date.UTC(
-      parseInt(year),
-      parseInt(month) - 1,
-      parseInt(day),
-      parseInt(hour),
-      parseInt(minute),
-      parseInt(second),
-    ),
+    parseInt(year),
+    parseInt(month) - 1,
+    parseInt(day),
+    parseInt(hour),
+    parseInt(minute),
+    parseInt(second),
   )
 
   return isNaN(date.getTime()) ? null : date
@@ -201,23 +211,93 @@ function _parseDateFromFilenameSimple(filename) {
   if (!match) return null
 
   const [, year, month, day] = match
-  const date = new Date(Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day)))
+  const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
   return isNaN(date.getTime()) ? null : date
 }
 
-// Apply late-night adjustment: 00:00-05:00 local → previous day
+// Hour on the camera clock at and after which a photo is treated as belonging
+// to the previous day. Configurable via the LATE_NIGHT_HOUR env var
+// (default 5 — i.e. 00:00–04:59 → previous day; LATE_NIGHT_HOUR=6 would mean
+// 00:00–05:59, LATE_NIGHT_HOUR=0 disables the rule).
+function _getLateNightHour() {
+  const raw = process.env.LATE_NIGHT_HOUR
+  if (raw == null || raw === '') return 5
+  const n = parseInt(raw, 10)
+  if (isNaN(n) || n < 0 || n > 23) return 5
+  return n
+}
+
+// Apply late-night adjustment: hour < LATE_NIGHT_HOUR on the camera clock
+// → previous day. Uses local getters because the Date is constructed with
+// local civil time components — there is no timezone concept in this pipeline.
 function _adjustLateNight(date) {
-  const hours = date.getUTCHours()
-  if (hours >= 0 && hours < 5) {
+  const threshold = _getLateNightHour()
+  if (threshold === 0) return date
+  const hours = date.getHours()
+  if (hours >= 0 && hours < threshold) {
     const adjusted = new Date(date)
-    adjusted.setUTCDate(adjusted.getUTCDate() - 1)
+    adjusted.setDate(adjusted.getDate() - 1)
     return adjusted
   }
   return date
 }
 
-// Parse import date from file: EXIF → structured filename → mtime → now
-// Returns a Date object (UTC) suitable for folder path construction.
+// Format a Date into an ISO string with a trailing 'Z' marker using the Date's
+// LOCAL components (year/month/day/hour/.../ms are taken from the instance
+// as-is, regardless of system timezone). This is a valid Prisma DateTime
+// representation; the app treats the value as timezone-agnostic (camera-clock
+// civil time) and renders only the calendar/clock components, never the zone.
+function formatDateAsUtcIso(date) {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return null
+  const pad = (n, len = 2) => String(n).padStart(len, '0')
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` +
+    `.${pad(date.getMilliseconds(), 3)}Z`
+  )
+}
+
+// Format a Date into a string using tokens like YYYY, MM, DD, HH, mm, ss, SSS.
+// Uses local components because the Date represents camera-clock civil time
+// (the pipeline is timezone-agnostic).
+// Example: formatDateForFilename(date, 'YYYYMMDD_HHmmssSSS') => '20240115_143022123'
+// SSS (3-digit milliseconds) is useful for uniqueness when multiple photos
+// share the same second.
+// A single-pass regex replace prevents token collisions (e.g. 'MM' vs 'mm').
+// Longer tokens (SSS) must come first in the alternation to avoid 'ss'
+// matching inside 'SSS' (though case-sensitive regex makes this safe, it's
+// good practice).
+function formatDateForFilename(date, formatString) {
+  const pad = (num, len = 2) => String(num).padStart(len, '0')
+
+  const tokenMap = {
+    YYYY: date.getFullYear(),
+    MM: pad(date.getMonth() + 1),
+    DD: pad(date.getDate()),
+    HH: pad(date.getHours()),
+    mm: pad(date.getMinutes()),
+    ss: pad(date.getSeconds()),
+    SSS: pad(date.getMilliseconds(), 3),
+  }
+
+  return formatString.replace(/SSS|YYYY|MM|DD|HH|mm|ss/g, (match) => tokenMap[match])
+}
+
+// Sanitize a string for safe use in a filename.
+// Removes or replaces characters that are invalid in filenames across platforms.
+// Useful for future extensions where tokens may come from EXIF tags (e.g., OwnerName, Artist).
+function sanitizeForFilename(str) {
+  if (!str) return ''
+  return str
+    .replace(/[<>:"/\\|?*]/g, '_') // Replace invalid characters
+    .replace(/\s+/g, '_') // Replace whitespace with underscore
+    .replace(/_{2,}/g, '_') // Collapse multiple underscores
+    .replace(/^_+|_+$/g, '') // Trim leading/trailing underscores
+}
+
+// Parse import date from file: EXIF → structured filename → mtime → now.
+// Returns a Date whose local getters yield the camera-clock components
+// verbatim — the application is timezone-agnostic and never shifts the date.
 async function parseImportDate(filePath) {
   const exiftool = require('exiftool-vendored').exiftool
 
@@ -226,7 +306,7 @@ async function parseImportDate(filePath) {
 
     const dateField = tags.DateTimeOriginal || tags.CreateDate || tags.DateTimeDigitized
     if (dateField) {
-      const parsed = _parseExifDateAsUtc(dateField)
+      const parsed = _parseExifDateAsLocal(dateField)
       if (parsed) return _adjustLateNight(parsed)
     }
   } catch (err) {
@@ -239,7 +319,19 @@ async function parseImportDate(filePath) {
   try {
     const stats = await fs.stat(filePath)
     if (stats.mtime && !isNaN(new Date(stats.mtime).getTime())) {
-      return _adjustLateNight(new Date(stats.mtime))
+      // mtime is a real Date instant; rebuild it as local civil so the rest
+      // of the pipeline treats it the same as EXIF/filename dates.
+      const m = new Date(stats.mtime)
+      const localMtime = new Date(
+        m.getFullYear(),
+        m.getMonth(),
+        m.getDate(),
+        m.getHours(),
+        m.getMinutes(),
+        m.getSeconds(),
+        m.getMilliseconds(),
+      )
+      return _adjustLateNight(localMtime)
     }
   } catch (err) {
     // stat failed — use now
@@ -266,15 +358,26 @@ async function extractExifData(filePath, stat) {
       : tags.DateTimeOriginal || tags.CreateDate || tags.DateTimeDigitized
     if (dateField) {
       // ExifDateTime from exiftool-vendored has raw .year/.month/.day/.hour/.minute/.second
-      // components (the camera's local time). We store them as UTC so capturedAt
-      // matches the EXIF local time and the filename, without timezone conversion.
-      capturedAt = _parseExifDateAsUtc(dateField)
+      // — the camera's local civil time. We preserve those components verbatim
+      // (no UTC conversion) because the app is timezone-agnostic.
+      capturedAt = _parseExifDateAsLocal(dateField)
     }
 
     if (!capturedAt && stat) {
       const fsDate = stat.birthtime || stat.mtime
       if (fsDate && !isNaN(new Date(fsDate).getTime())) {
-        capturedAt = new Date(fsDate)
+        // fs stat returns a real Date instant; keep its local civil components
+        // so capturedAt matches what the user sees in the file properties.
+        const d = new Date(fsDate)
+        capturedAt = new Date(
+          d.getFullYear(),
+          d.getMonth(),
+          d.getDate(),
+          d.getHours(),
+          d.getMinutes(),
+          d.getSeconds(),
+          d.getMilliseconds(),
+        )
       }
     }
 
@@ -367,10 +470,43 @@ async function scanDirectory(dirPath) {
     }
 
     return files
-  } catch (error) {
-    logger.error(`Failed to scan directory ${dirPath}`, error)
-    return []
+} catch (error) {
+  logger.error(`Failed to scan directory ${dirPath}`, error)
+  return []
+}
+}
+
+// Extract the "owner" from the file path relative to the import directory.
+// If any path segment (directory) starts with '_', it's treated as an owner
+// prefix (e.g. '_Denis' in 'Import/_Denis/photo.jpg' yields 'Denis').
+// Returns the sanitized owner name, or null if no owner folder is found.
+function extractFolderOwner(filePath, importPath) {
+  try {
+    // Resolve paths to absolute to ensure path.relative works correctly
+    const resolvedImportPath = path.resolve(importPath)
+    const resolvedFilePath = path.resolve(filePath)
+    const relativePath = path.relative(resolvedImportPath, resolvedFilePath)
+
+    // If the relative path starts with '..' the file is not under the import directory
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+      return null
+    }
+
+    const segments = relativePath.split(path.sep)
+
+    for (const segment of segments) {
+      if (segment.startsWith('_')) {
+        const owner = segment.slice(1) // Remove the '_' prefix
+        const sanitized = sanitizeForFilename(owner)
+        return sanitized || null
+      }
+    }
+  } catch (err) {
+    // If the file is not under the import path, path.relative will fail or
+    // produce a path that doesn't match — just return null.
+    return null
   }
+  return null
 }
 
 module.exports = {
@@ -386,4 +522,8 @@ module.exports = {
   VIDEO_EXTENSIONS,
   IMAGE_EXTENSIONS,
   parseImportDate,
+  formatDateForFilename,
+  formatDateAsUtcIso,
+  sanitizeForFilename,
+  extractFolderOwner,
 }

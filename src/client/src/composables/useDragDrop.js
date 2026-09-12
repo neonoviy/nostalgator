@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { getT } from '../i18n/composable.js'
-import { addNotification, removeNotification } from './useNotifications.js'
+import { addNotification } from './useNotifications.js'
+import { uploadFiles } from './useFileUpload.js'
 import { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from '../config.js'
 
 const ALL_EXTENSIONS = [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS]
@@ -8,6 +9,7 @@ const ALL_EXTENSIONS = [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS]
 export function useDragDrop(scanState, isUploaderRef) {
   const isDragging = ref(false)
   let dragCounter = 0
+  let internalDrag = false
 
   const isSupportedFile = (file) => {
     const ext = '.' + file.name.split('.').pop().toLowerCase()
@@ -53,61 +55,15 @@ export function useDragDrop(scanState, isUploaderRef) {
     return { files, unsupported }
   }
 
-  const uploadFiles = async (files) => {
-    if (files.length === 0) return
-
-    const BATCH_SIZE = 10
-    let uploaded = 0
-    const failed = []
-    const token = localStorage.getItem('auth_token')
-
-    const t = getT()
-    addNotification('progress', t('upload.progress'), { id: 'upload-progress', duration: 0 })
-
-    for (let i = 0; i < files.length; i += BATCH_SIZE) {
-      const batch = files.slice(i, i + BATCH_SIZE)
-      const formData = new FormData()
-      batch.forEach((f) => formData.append('files', f))
-
-      try {
-        const response = await fetch('/api/import/upload', {
-          method: 'POST',
-          headers: {
-            Authorization: token ? `Bearer ${token}` : '',
-          },
-          body: formData,
-        })
-
-        if (!response.ok) {
-          const err = await response.json()
-          throw new Error(err.error?.message || err.error || t('upload.error.serverError', { status: response.status }))
-        }
-
-        const resultData = await response.json()
-        const result = resultData.success ? resultData.data : resultData
-        uploaded += result.uploaded
-        if (result.failed?.length) failed.push(...result.failed)
-
-        addNotification('progress', t('upload.uploaded', { uploaded, total: files.length }), {
-          id: 'upload-progress',
-          duration: 0,
-        })
-      } catch (error) {
-        console.error('Failed to upload batch:', error)
-        failed.push(...batch.map((f) => f.name))
-      }
-    }
-
-    removeNotification('upload-progress')
-
-    if (failed.length > 0) {
-      addNotification('error', t('upload.errors', { uploaded, failed: failed.length }))
-    } else {
-      addNotification('success', t('upload.complete', { uploaded }))
-    }
+  const hasFileItems = (e) => {
+    const types = e.dataTransfer?.types
+    if (!types) return false
+    return Array.from(types).includes('Files')
   }
 
   const handleDragEnter = (e) => {
+    if (internalDrag) return
+    if (!hasFileItems(e)) return
     e.preventDefault()
     if (!scanState.importWatchEnabled.value) return
     dragCounter++
@@ -115,6 +71,8 @@ export function useDragDrop(scanState, isUploaderRef) {
   }
 
   const handleDragLeave = (e) => {
+    if (internalDrag) return
+    if (!hasFileItems(e)) return
     e.preventDefault()
     if (!scanState.importWatchEnabled.value) return
     dragCounter--
@@ -122,11 +80,15 @@ export function useDragDrop(scanState, isUploaderRef) {
   }
 
   const handleDragOver = (e) => {
+    if (internalDrag) return
+    if (!hasFileItems(e)) return
     e.preventDefault()
     if (!scanState.importWatchEnabled.value) return
   }
 
   const handleDrop = async (e) => {
+    if (internalDrag) return
+    if (!hasFileItems(e)) return
     e.preventDefault()
     dragCounter = 0
     isDragging.value = false
@@ -173,7 +135,17 @@ export function useDragDrop(scanState, isUploaderRef) {
     }
   }
 
+  const handleDragStart = () => {
+    internalDrag = true
+  }
+
+  const handleDragEnd = () => {
+    internalDrag = false
+  }
+
   const setupListeners = () => {
+    window.addEventListener('dragstart', handleDragStart)
+    window.addEventListener('dragend', handleDragEnd)
     window.addEventListener('dragenter', handleDragEnter)
     window.addEventListener('dragleave', handleDragLeave)
     window.addEventListener('dragover', handleDragOver)
@@ -181,6 +153,8 @@ export function useDragDrop(scanState, isUploaderRef) {
   }
 
   const cleanupListeners = () => {
+    window.removeEventListener('dragstart', handleDragStart)
+    window.removeEventListener('dragend', handleDragEnd)
     window.removeEventListener('dragenter', handleDragEnter)
     window.removeEventListener('dragleave', handleDragLeave)
     window.removeEventListener('dragover', handleDragOver)

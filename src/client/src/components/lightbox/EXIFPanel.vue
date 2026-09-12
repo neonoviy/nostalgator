@@ -537,27 +537,51 @@
   const formatDate = (date) => {
     if (!date) return ''
 
-    // exiftool-vendored returns an ExifDateTime object with rawValue
+    // Build the local-civil-time string from a Date by reading local getters
+    // (the date pipeline is timezone-agnostic; components represent the moment
+    // of capture on the camera clock, not the user's local clock).
+    const fromDate = (d) => {
+      if (isNaN(d.getTime())) return ''
+      const pad = (n, len = 2) => String(n).padStart(len, '0')
+      return (
+        `${pad(d.getFullYear(), 4)}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+        `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+      )
+    }
+
+    // exiftool-vendored returns an ExifDateTime object with rawValue (a string
+    // like "YYYY:MM:DD HH:MM:SS[.ss][±HH:MM]"). The string is the camera-clock
+    // civil time; we strip any timezone offset so the displayed value matches
+    // what was on the camera at the moment of capture.
     if (typeof date === 'object' && date.rawValue) {
-      date = date.rawValue
+      return formatExifString(date.rawValue)
     }
 
-    // exiftool may return date as a string "YYYY:MM:DD HH:MM:SS" or as a Date object
+    // exiftool may also return a Date directly (e.g. via ModifyDate).
     if (date instanceof Date) {
-      const langCode = locale.value === 'ru' ? 'ru-RU' : 'en-US'
-      return date.toLocaleString(langCode)
+      return fromDate(date)
     }
 
-    // If string, convert format "YYYY:MM:DD HH:MM:SS" → "YYYY-MM-DDTHH:MM:SS"
-    const dateStr = String(date)
-    // Replace YYYY:MM:DD HH:MM:SS → YYYY-MM-DDTHH:MM:SS (ISO format)
-    const isoFormat = dateStr.replace(
-      /(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/,
-      '$1-$2-$3T$4:$5:$6',
+    // String form: "YYYY:MM:DD HH:MM:SS[.ss][±HH:MM]" or already-ISO.
+    return formatExifString(String(date))
+  }
+
+  const formatExifString = (str) => {
+    if (!str) return ''
+    // Normalize "YYYY:MM:DD HH:MM:SS[.ss][±HH:MM]" → "YYYY-MM-DD HH:MM:SS",
+    // dropping any timezone offset because the app is timezone-agnostic.
+    const m = str.match(
+      /^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/,
     )
-    const d = new Date(isoFormat)
-    const langCode = locale.value === 'ru' ? 'ru-RU' : 'en-US'
-    return isNaN(d.getTime()) ? '' : d.toLocaleString(langCode)
+    if (m) {
+      return `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}:${m[6]}`
+    }
+    // Already-ISO without TZ (e.g. "2024-01-15T04:30:22.123") — strip the T.
+    const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/)
+    if (iso) {
+      return `${iso[1]}-${iso[2]}-${iso[3]} ${iso[4]}:${iso[5]}:${iso[6]}`
+    }
+    return str
   }
 
   const formatExposure = (exposure) => {

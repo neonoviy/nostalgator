@@ -1,6 +1,6 @@
 const fs = require('fs').promises
 const path = require('path')
-const { normalizePath, isMediaFile, parseImportDate } = require('../utils/fileUtils')
+const { normalizePath, isMediaFile, parseImportDate, formatDateForFilename, extractFolderOwner } = require('../utils/fileUtils')
 const logger = require('../utils/logger')
 const { createRecursiveWatcher } = require('./recursiveWatcher')
 
@@ -15,6 +15,21 @@ async function safeMove(src, dest) {
       throw err
     }
   }
+}
+
+// Folder names that must never be REMOVED by the Import watcher:
+//   `_Name` — owner/upload folder; contents are imported but the folder itself persists
+//   `.sync` — synchronization marker folder used by external tools
+// These names are imported normally when they contain files; only the deletion paths
+// must check this helper.
+function _isReservedImportName(name) {
+  return name.startsWith('_') || name === '.sync'
+}
+
+// Hidden filesystem entries (Unix dotfiles) that should neither be imported
+// nor have their containing directories removed by the watcher.
+function _isHiddenEntry(name) {
+  return name.startsWith('.')
 }
 
 /**
@@ -151,7 +166,7 @@ class WatcherService {
     try {
       const entries = await fs.readdir(importPath, { withFileTypes: true })
       for (const entry of entries) {
-        if (entry.isDirectory()) {
+        if (entry.isDirectory() && !_isReservedImportName(entry.name) && !_isHiddenEntry(entry.name)) {
           const fullPath = path.join(importPath, entry.name)
           const remaining = await this.scanImportDir(fullPath)
           if (remaining.length === 0) {
@@ -168,7 +183,14 @@ class WatcherService {
 
   // Обработка отдельного файла из Import (файл напрямую в Import, без папки)
   async handleImportFileAdded(filePath) {
-    logger.import(`File detected: ${path.basename(filePath)}`)
+    const basename = path.basename(filePath)
+    logger.import(`File detected: ${basename}`)
+
+    // Skip hidden filenames (dotfiles). Reserved owner-folder names like `_Denis`
+    // are not expected as files at the Import root, so we also skip them here.
+    if (_isHiddenEntry(basename) || _isReservedImportName(basename)) {
+      return
+    }
 
     // Проверяем, что это медиафайл
     if (!isMediaFile(filePath)) {
@@ -179,7 +201,15 @@ class WatcherService {
     const fileDir = path.dirname(filePath)
     const importBasename = path.basename(fileDir)
     if (importBasename.toLowerCase() !== 'import') {
-      // Файл в подпапке — обрабатывается в handleImportDirAdded
+      const dirName = path.basename(fileDir)
+      // Skip files inside hidden subfolders (e.g. .sync). Owner folders (_Name)
+      // are processed normally — their files are imported and the folder itself
+      // is preserved by the dir handler.
+      if (_isHiddenEntry(dirName)) {
+        return
+      }
+      // File is in a regular subfolder — delegate to dir handler so it gets processed.
+      this.handleImportDirAdded(fileDir)
       return
     }
 
@@ -208,7 +238,12 @@ class WatcherService {
       const entries = await fs.readdir(importPath, { withFileTypes: true })
 
       for (const entry of entries) {
+        // Skip hidden entries (dotfiles, dot-dirs) entirely — neither import nor delete.
+        if (_isHiddenEntry(entry.name)) continue
+
         const fullPath = path.join(importPath, entry.name)
+        // Reserved names (owner folders, .sync) are imported but never deleted.
+        const preserveDir = _isReservedImportName(entry.name)
 
         if (entry.isDirectory()) {
           const files = await this.scanImportDir(fullPath)
@@ -216,7 +251,9 @@ class WatcherService {
             for (const filePath of files) {
               await this.processImportFileWithUser(filePath, userId)
             }
-            await fs.rm(fullPath, { recursive: true, force: true }).catch(() => {})
+            if (!preserveDir) {
+              await fs.rm(fullPath, { recursive: true, force: true }).catch(() => {})
+            }
           }
         } else if (entry.isFile() && isMediaFile(fullPath)) {
           await this.processImportFileWithUser(fullPath, userId)
@@ -267,6 +304,13 @@ class WatcherService {
     const pathBasename = path.basename(dirPath)
     if (pathBasename.toLowerCase() === 'import') return
 
+    // Skip hidden/system folders entirely. Reserved owner folders (_Name) ARE
+    // processed (their files are imported), but the folder itself is never removed.
+    if (_isHiddenEntry(pathBasename)) {
+      return
+    }
+    const preserveDir = _isReservedImportName(pathBasename)
+
     logger.import(`Folder detected: ${path.basename(dirPath)}`)
 
     this.debounce(`import_dir_${dirPath}`, async () => {
@@ -288,6 +332,11 @@ class WatcherService {
           } catch (error) {
             logger.error(`File import failed: ${path.basename(filePath)}`)
           }
+        }
+
+        if (preserveDir) {
+          // Owner folders (e.g. _Denis) persist across imports by design.
+          return
         }
 
         const remaining = await this.scanImportDir(dirPath)
@@ -313,6 +362,8 @@ class WatcherService {
       const entries = await fs.readdir(currentPath, { withFileTypes: true })
 
       for (const entry of entries) {
+        if (_isHiddenEntry(entry.name)) continue
+
         const fullPath = path.join(currentPath, entry.name)
 
         if (entry.isDirectory()) {
@@ -335,8 +386,15 @@ class WatcherService {
       logDetail(`EXIF read for ${path.basename(filePath)}`)
 
       const date = await parseImportDate(filePath)
-      logDetail(`Final date for ${path.basename(filePath)}: ${date.toISOString()}`)
+      const pad = (n) => String(n).padStart(2, '0')
+      logDetail(
+        `Final date for ${path.basename(filePath)}: ` +
+          `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+          `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${String(date.getMilliseconds()).padStart(3, '0')}`,
+      )
 
+      // date components come straight from EXIF/filename/mtime as local
+      // civil time on the camera clock (timezone-agnostic pipeline).
       const year = date.getFullYear()
       const month = String(date.getMonth() + 1).padStart(2, '0')
       const day = String(date.getDate()).padStart(2, '0')
@@ -361,19 +419,29 @@ class WatcherService {
       await fs.mkdir(yearPath, { recursive: true })
       await fs.mkdir(folderPath, { recursive: true })
 
-      const fileName = path.basename(filePath)
-      const destPath = path.join(folderPath, fileName)
+      // Generate filename using FILENAME_FORMAT (default: YYYYMMDD_HHmmssSSS)
+      const filenameFormat = process.env.FILENAME_FORMAT || 'YYYYMMDD_HHmmssSSS'
+      const formattedBase = formatDateForFilename(date, filenameFormat)
+      const ext = path.extname(filePath)
 
-      let finalDestPath = destPath
+      // Optional: append owner folder name (e.g. '_Denis' from Import/_Denis/)
+      const importPath = process.env.IMPORT_PATH || './Import'
+      const owner = extractFolderOwner(filePath, importPath)
+      const generatedFileName = owner
+        ? `${formattedBase}_${owner}${ext}`
+        : `${formattedBase}${ext}`
+
+      // Check for filename collision and add timestamp suffix if needed
+      let finalDestPath = path.join(folderPath, generatedFileName)
       if (
         await fs
-          .access(destPath)
+          .access(finalDestPath)
           .then(() => true)
           .catch(() => false)
       ) {
-        const name = path.parse(fileName).name
-        const ext = path.extname(fileName)
-        const newFileName = `${name}_${Date.now()}${ext}`
+        const newFileName = owner
+          ? `${formattedBase}_${owner}_${Date.now()}${ext}`
+          : `${formattedBase}_${Date.now()}${ext}`
         finalDestPath = path.join(folderPath, newFileName)
       }
 

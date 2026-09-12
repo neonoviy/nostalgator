@@ -225,7 +225,6 @@ class PlaceRecognitionService {
           matchedClusterIds.add(cluster.id)
           allPlaceIds.add(known.placeId)
           matched = true
-          break
         }
       }
       if (matched) continue
@@ -279,6 +278,10 @@ class PlaceRecognitionService {
     if (allPlaceIds.size > 0) {
       await this._addEventPlaces(eventId, Array.from(allPlaceIds))
       this.placesFound += allPlaceIds.size
+
+      if (this.websocketService) {
+        this.websocketService.notifyEventsChanged('places', eventId)
+      }
     }
 
     this.clustersFound += clusterNames.size

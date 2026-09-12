@@ -7,6 +7,7 @@ Originals-small/
 Thumbnails/
 Thumbs/
 Import/
+docs/
 
 prisma/migrations/
 prisma/dev.db-journal

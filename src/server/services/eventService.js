@@ -5,6 +5,7 @@ const {
   getMediaFiles,
   getMediaInfo,
   extractExifData,
+  formatDateAsUtcIso,
   hashFileChunk,
 } = require('../utils/fileUtils')
 const logger = require('../utils/logger')
@@ -1073,9 +1074,9 @@ class EventService {
       const params = []
 
       for (const data of batchData) {
-        const capturedAt = data.capturedAt ? data.capturedAt.toISOString() : null
+        const capturedAt = data.capturedAt ? formatDateAsUtcIso(data.capturedAt) : null
         values.push('(?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-        const now = new Date().toISOString()
+        const now = formatDateAsUtcIso(new Date())
         params.push(
           eventId,
           data.filename,
